@@ -6,10 +6,11 @@ import {
   Index,
   PrimaryGeneratedColumn,
 } from 'typeorm';
+import { HasExternalUuid } from '../types/common.types';
 import { Reward } from './reward.entity';
 
 @Entity(`transaction`)
-export class Transaction {
+export class Transaction implements HasExternalUuid {
   @PrimaryGeneratedColumn({ type: `bigint` })
   id: string;
 

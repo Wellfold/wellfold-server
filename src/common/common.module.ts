@@ -1,13 +1,15 @@
+import { HttpModule } from '@nestjs/axios';
 import { Module } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import {
   DB_TYPE,
-  ENV_NAME__DB_URL_NAME,
-  ENV_NAME__IS_DEV,
+  ENV__DB_URL_NAME,
+  ENV__IS_DEV,
 } from './constants/global.constants';
 import { Member, Reward, Transaction } from './entities';
 import { DatabaseService } from './providers/database.service';
+import { HttpInterceptorProvider } from './providers/http.interceptor';
 import { PrefixNamingStrategy } from './providers/prefix-naming.strategy';
 
 @Module({
@@ -15,11 +17,11 @@ import { PrefixNamingStrategy } from './providers/prefix-naming.strategy';
     TypeOrmModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => {
-        const isDev = config.get(ENV_NAME__IS_DEV) ? true : false;
+        const isDev = config.get(ENV__IS_DEV) ? true : false;
         const prefix = isDev ? `dev__` : ``;
         return {
           type: DB_TYPE,
-          url: config.get(ENV_NAME__DB_URL_NAME),
+          url: config.get(ENV__DB_URL_NAME),
           ssl: { rejectUnauthorized: false },
           autoLoadEntities: true,
           synchronize: true,
@@ -29,7 +31,13 @@ import { PrefixNamingStrategy } from './providers/prefix-naming.strategy';
       },
     }),
     TypeOrmModule.forFeature([Member, Reward, Transaction]),
+    HttpModule.register({
+      timeout: 20000,
+      maxRedirects: 5,
+    }),
+    ConfigModule,
   ],
-  providers: [DatabaseService],
+  providers: [DatabaseService, HttpInterceptorProvider, DatabaseService],
+  exports: [HttpModule, ConfigModule, DatabaseService],
 })
 export class CommonModule {}

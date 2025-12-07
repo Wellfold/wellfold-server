@@ -1,3 +1,4 @@
+import { HasExternalUuid } from './../types/common.types';
 // member.entity.ts
 import {
   Column,
@@ -9,7 +10,7 @@ import {
 } from 'typeorm';
 
 @Entity(`member`)
-export class Member {
+export class Member implements HasExternalUuid {
   @PrimaryGeneratedColumn({ type: `bigint` })
   id: string;
 
