@@ -17,7 +17,7 @@ export class SyncManagerService {
     command: `run-initial-import`,
   })
   async runInitialImport() {
-    // await this.importMembers();
+    await this.importMembers();
     await this.importTransactions();
   }
 
