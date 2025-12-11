@@ -2,14 +2,17 @@ import { Member, Transaction } from '@/common/entities';
 import { DatabaseService } from '@/common/providers/database.service';
 import { HasExternalUuid } from '@/common/types/common.types';
 import { OliveService } from '@/olive/olive.service';
+import { Presets, SingleBar } from 'cli-progress';
 import { Command, Console } from 'nestjs-console';
 import { DeepPartial } from 'typeorm';
+import { MetricsService } from './metrics.provider';
 
 @Console()
 export class SyncManagerService {
   constructor(
     protected olive: OliveService,
-    protected dbService: DatabaseService,
+    protected database: DatabaseService,
+    protected metrics: MetricsService,
   ) {}
 
   @Command({
@@ -17,8 +20,60 @@ export class SyncManagerService {
     command: `run-initial-import`,
   })
   async runInitialImport() {
-    await this.importMembers();
-    await this.importTransactions();
+    // await this.importMembers();
+    // await this.importTransactions();
+    await this.runCalculations();
+  }
+
+  async runCalculations() {
+    const batchSize = 1000;
+
+    // First get total count (fast query)
+    const total = await this.database.count(Member);
+
+    const bar = new SingleBar(
+      {
+        format: `Processing GMV & Rewards metrics for Members |{bar}| {value}/{total} ({percentage}%)`,
+      },
+      Presets.shades_classic,
+    );
+
+    bar.start(total, 0);
+
+    let offset = 0;
+    let hasMore = true;
+
+    while (hasMore) {
+      const updatedMembers = [];
+      const memberBatch = await this.database.getMany(
+        Member,
+        batchSize,
+        offset,
+      );
+
+      if (!memberBatch?.length) break;
+
+      for (const member of memberBatch) {
+        const { totalGmv, qualifiedGmv, rewards } =
+          await this.metrics.calculateGmvAndRewards(member);
+
+        updatedMembers.push({
+          ...member,
+          totalGmv,
+          qualifiedGmv,
+          rewards,
+        });
+
+        bar.increment(); // progress per member
+      }
+
+      await this.database.upsertMany(Member, updatedMembers);
+
+      offset += batchSize;
+      hasMore = memberBatch.length === batchSize;
+    }
+
+    bar.stop();
   }
 
   /**
@@ -26,7 +81,7 @@ export class SyncManagerService {
    *
    * Calls the given oliveFetcher(pageSize, pageNumber)
    * Applies chunking + mapping (externalUuid)
-   * Upserts batches into DB
+   * Upserts memberBatches into DB
    */
   private async importPaginated<
     TRecord extends { id: string },
@@ -39,7 +94,7 @@ export class SyncManagerService {
     entityClass: new () => TEntity,
   ): Promise<void> {
     const pageSize = 1000;
-    const batchSize = 250;
+    const memberBatchSize = 250;
     let pageNumber = 1;
 
     while (true) {
@@ -52,8 +107,8 @@ export class SyncManagerService {
 
       if (!items.length) break;
 
-      for (let i = 0; i < items.length; i += batchSize) {
-        const chunk = items.slice(i, i + batchSize);
+      for (let i = 0; i < items.length; i += memberBatchSize) {
+        const chunk = items.slice(i, i + memberBatchSize);
 
         const mapped = chunk.map((record) => {
           const { id, ...rest } = record;
@@ -64,12 +119,12 @@ export class SyncManagerService {
         });
 
         console.log(
-          `Upserting chunk ${i / batchSize + 1} of ${Math.ceil(
-            items.length / batchSize,
+          `Upserting chunk ${i / memberBatchSize + 1} of ${Math.ceil(
+            items.length / memberBatchSize,
           )}`,
         );
 
-        await this.dbService.upsertMany(entityClass, mapped);
+        await this.database.upsertMany(entityClass, mapped);
       }
 
       if (items.length < pageSize) break;

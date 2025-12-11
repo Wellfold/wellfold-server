@@ -5,12 +5,16 @@ import {
   Entity,
   Index,
   PrimaryGeneratedColumn,
+  UpdateDateColumn,
 } from 'typeorm';
-import { HasExternalUuid } from '../types/common.types';
+import {
+  HasExternalUuid,
+  HasInternalCreatedUpdated,
+} from '../types/common.types';
 import { Reward } from './reward.entity';
 
 @Entity(`transaction`)
-export class Transaction implements HasExternalUuid {
+export class Transaction implements HasExternalUuid, HasInternalCreatedUpdated {
   @PrimaryGeneratedColumn({ type: `bigint` })
   id: string;
 
@@ -69,4 +73,13 @@ export class Transaction implements HasExternalUuid {
 
   @Column(() => Reward)
   reward: Reward;
+
+  @Column({ type: `boolean`, nullable: true })
+  isRedemption: boolean;
+
+  @CreateDateColumn({ type: `timestamptz` })
+  createdInternally: Date;
+
+  @UpdateDateColumn({ type: `timestamptz` })
+  updatedInternally: Date;
 }

@@ -1,4 +1,7 @@
-import { HasExternalUuid } from './../types/common.types';
+import {
+  HasExternalUuid,
+  HasInternalCreatedUpdated,
+} from './../types/common.types';
 // member.entity.ts
 import {
   Column,
@@ -10,20 +13,24 @@ import {
 } from 'typeorm';
 
 @Entity(`member`)
-export class Member implements HasExternalUuid {
-  @PrimaryGeneratedColumn({ type: `bigint` })
+export class Member implements HasExternalUuid, HasInternalCreatedUpdated {
+  @PrimaryGeneratedColumn({ type: `bigint`, name: `iterative_id` })
   id: string;
 
   @Index()
-  @Column({ type: `uuid`, unique: true })
+  @Column({ type: `uuid`, unique: true, name: `id`, nullable: true })
+  wellfoldId: string;
+
+  @Index()
+  @Column({ type: `uuid`, unique: true, name: `member_id` })
   externalUuid: string;
 
   @Index()
-  @Column({ type: `varchar`, nullable: true })
+  @Column({ type: `varchar`, nullable: true, name: `first_name` })
   firstName: string | null;
 
   @Index()
-  @Column({ type: `varchar`, nullable: true })
+  @Column({ type: `varchar`, nullable: true, name: `last_name` })
   lastName: string | null;
 
   @Index()
@@ -31,8 +38,21 @@ export class Member implements HasExternalUuid {
   phone: string | null;
 
   @Index()
-  @Column({ type: `varchar`, nullable: true })
+  @Column({ type: `varchar`, nullable: true, name: `program_id` })
   programId: string | null;
+
+  @Column({ type: `float`, default: 0 })
+  totalGmv: number;
+
+  @Column({ type: `float`, default: 0 })
+  qualifiedGmv: number;
+
+  @Column({ type: `float`, default: 0 })
+  rewards: number;
+
+  @Index()
+  @Column({ type: `varchar`, nullable: true, name: `auth_user_id` })
+  authUserId: string | null;
 
   @Column({ type: `timestamptz`, nullable: true })
   tcAcceptedDate: Date | null;
