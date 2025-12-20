@@ -1,6 +1,7 @@
 import { Card, Member, Transaction } from '@/common/entities';
 import { DatabaseService } from '@/common/providers/database.service';
-import { HasExternalUuid } from '@/common/types/common.types';
+import { HasExternalUuid, ThirdPartyOrigin } from '@/common/types/common.types';
+import { LoyalizeService } from '@/loyalize/loyalize.service';
 import { OliveService } from '@/olive/olive.service';
 import { Presets, SingleBar } from 'cli-progress';
 import { Command, Console } from 'nestjs-console';
@@ -11,6 +12,7 @@ import { MetricsService } from './metrics.provider';
 export class SyncManagerService {
   constructor(
     protected olive: OliveService,
+    protected loyalize: LoyalizeService,
     protected database: DatabaseService,
     protected metrics: MetricsService,
   ) {}
@@ -88,48 +90,54 @@ export class SyncManagerService {
     TRecord extends { id: string },
     TEntity extends HasExternalUuid,
   >(
-    oliveFetcher: (
+    fetcher: (
       pageSize: number,
       pageNumber: number,
     ) => Promise<{ items: TRecord[] }>,
     entityClass: new () => TEntity,
+    thirdPartyOrigin: ThirdPartyOrigin,
   ): Promise<void> {
     const pageSize = 1000;
     const memberBatchSize = 250;
     let pageNumber = 1;
 
-    while (true) {
-      const { items } = await oliveFetcher(pageSize, pageNumber);
-      console.log(
-        `Fetched page ${pageNumber}: ${
-          items.length
-        } ${entityClass.name.toLowerCase()}s`,
-      );
-
-      if (!items.length) break;
-
-      for (let i = 0; i < items.length; i += memberBatchSize) {
-        const chunk = items.slice(i, i + memberBatchSize);
-
-        const mapped = chunk.map((record) => {
-          const { id, ...rest } = record;
-          return {
-            externalUuid: id,
-            ...rest,
-          } as unknown as DeepPartial<TEntity>;
-        });
-
+    try {
+      while (true) {
+        const { items } = await fetcher(pageSize, pageNumber);
         console.log(
-          `Upserting chunk ${i / memberBatchSize + 1} of ${Math.ceil(
-            items.length / memberBatchSize,
-          )}`,
+          `Fetched page ${pageNumber}: ${
+            items.length
+          } ${entityClass.name.toLowerCase()}s`,
         );
 
-        await this.database.upsertMany(entityClass, mapped);
-      }
+        if (!items.length) break;
 
-      if (items.length < pageSize) break;
-      pageNumber++;
+        for (let i = 0; i < items.length; i += memberBatchSize) {
+          const chunk = items.slice(i, i + memberBatchSize);
+
+          const mapped = chunk.map((record) => {
+            const { id, ...rest } = record;
+            return {
+              externalUuid: id,
+              thirdPartyOrigin,
+              ...rest,
+            } as unknown as DeepPartial<TEntity>;
+          });
+
+          console.log(
+            `Upserting chunk ${i / memberBatchSize + 1} of ${Math.ceil(
+              items.length / memberBatchSize,
+            )}`,
+          );
+
+          await this.database.upsertMany(entityClass, mapped);
+        }
+
+        if (items.length < pageSize) break;
+        pageNumber++;
+      }
+    } catch (e) {
+      console.error(e);
     }
 
     console.log(`${entityClass.name} import completed.`);
@@ -139,10 +147,11 @@ export class SyncManagerService {
    * Import Members using shared logic
    */
   async importMembers(): Promise<void> {
-    console.log(`Importing members.`);
+    console.log(`Importing members from Olive.`);
     return this.importPaginated(
       (pageSize, pageNumber) => this.olive.pullMembers(pageSize, pageNumber),
       Member,
+      `olive`,
     );
   }
 
@@ -150,11 +159,19 @@ export class SyncManagerService {
    * Import Transactions using shared logic
    */
   async importTransactions(): Promise<void> {
-    console.log(`Importing transactions.`);
-    return this.importPaginated(
+    console.log(`Importing transactions from Olive.`);
+    await this.importPaginated(
       (pageSize, pageNumber) =>
         this.olive.pullTransactions(pageSize, pageNumber),
       Transaction,
+      `olive`,
+    );
+    console.log(`Importing transactions from Loyalize.`);
+    await this.importPaginated(
+      (pageSize, pageNumber) =>
+        this.loyalize.pullTransactions(pageSize, pageNumber),
+      Transaction,
+      `loyalize`,
     );
   }
 
@@ -166,6 +183,7 @@ export class SyncManagerService {
     return this.importPaginated(
       (pageSize, pageNumber) => this.olive.pullCards(pageSize, pageNumber),
       Card,
+      `olive`,
     );
   }
 }

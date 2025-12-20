@@ -17,7 +17,7 @@ export class MetricsService {
   async calculateGmvAndRewards(member: Member) {
     const transactions = await this.database.getByProperty(
       Transaction,
-      `memberId`,
+      `oliveMemberId`,
       member.externalUuid,
     );
     const gmv = transactions.reduce((sum: number, tx) => {
