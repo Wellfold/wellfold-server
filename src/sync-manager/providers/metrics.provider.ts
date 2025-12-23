@@ -14,6 +14,7 @@ export class MetricsService {
     protected database: DatabaseService,
     protected utility: UtilityService,
   ) {
+    this.init();
     setInterval(() => {
       this.init();
     }, PROGRAM_PROMOTION_PULL_INTERVAL);
@@ -51,12 +52,14 @@ export class MetricsService {
       { type: `rewards`, value: rewardsValue },
     ];
 
-    return metrics.map(({ type, value }) => ({
-      member,
-      type,
-      value,
-      uniqueMemberMetricId: `${member.wellfoldId}__${type}`,
-    }));
+    return metrics
+      .map(({ type, value }) => ({
+        member,
+        type,
+        value,
+        uniqueMemberMetricId: `${member.wellfoldId}__${type}`,
+      }))
+      .filter((metric) => !Number.isNaN(metric.value));
   }
 
   async calculateGmvAndRewards(member: Member) {
@@ -146,6 +149,10 @@ export class MetricsService {
           promotion.startDate.getTime() <= transaction.created.getTime() &&
           promotion.endDate.getTime() >= transaction.created.getTime(),
       );
+      if (!applicablePromotion) {
+        continue;
+      }
+
       // Calculate the *possible* reward from the transaction
       const possibleRewardFromTransaction =
         Number(transaction.amount) * (Number(applicablePromotion.value) / 100);

@@ -23,9 +23,9 @@ export class SyncManagerService {
   })
   async runInitialImport() {
     try {
-      await this.importMembers();
-      await this.importCards();
-      await this.importTransactions();
+      // await this.importMembers();
+      // await this.importCards();
+      // await this.importTransactions();
       await this.runMetrics();
       await this.setCardLinkDatesOnMmebers();
     } catch (e) {
