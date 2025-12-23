@@ -136,51 +136,76 @@ export class MetricsService {
       applicablePromotion: Promotion;
       calculatedReward: number;
     }[] = [];
-    const promotionProgressMap = new Map();
+
+    const promotionProgressMap = new Map<
+      string,
+      {
+        promotion: Promotion;
+        month: string;
+        rewardSum: number;
+      }
+    >();
+
+    // Find promotions that apply to member
     const memberPromotions = this.getMemberPromotions(member);
-    // Figure out Wellfold-specific rewards
+
     for (const transaction of transactions) {
-      // Don't count redemptions or Olive rewards transactions (will add later)
+      // Skip redemptions or already-rewarded transactions
       if (transaction.isRedemption || transaction.rewardAmount) continue;
-      // Get transaction date & month
+
+      // Get transaction date and month
       const transactionDate = transaction.created;
       const month = `${transactionDate.getFullYear()}${String(
         transactionDate.getMonth() + 1,
       ).padStart(2, `0`)}`;
-      // Find the first applicable promotion to this transaction
+
+      // Find first applicable promotion, don't do anything if none
       const applicablePromotion = memberPromotions.find(
         (promotion) =>
           promotion.mccCodes.includes(transaction.merchantCategoryCode) &&
-          promotion.startDate.getTime() <= transaction.created.getTime() &&
-          promotion.endDate.getTime() >= transaction.created.getTime(),
+          promotion.startDate.getTime() <= transactionDate.getTime() &&
+          promotion.endDate.getTime() >= transactionDate.getTime(),
       );
-      if (!applicablePromotion) {
-        continue;
-      }
+      if (!applicablePromotion) continue;
 
-      // Calculate the *possible* reward from the transaction
+      // Calculate possible reward
+      const transactionAmount = Number(transaction.amount);
+      const promotionPercent = Number(applicablePromotion.value);
       const possibleRewardFromTransaction =
-        Number(transaction.amount) * (Number(applicablePromotion.value) / 100);
-      // Get the collected promotion & previous WF rewards sum if it exists in the collection
+        transactionAmount * (promotionPercent / 100);
+
+      // Unique key/storage for promotion+month combination
       const pmCollectorKey = `${applicablePromotion.id}__${month}`;
       const collectedPmInfo = promotionProgressMap.get(pmCollectorKey);
-      const previousRewardSum = collectedPmInfo?.sum ?? 0;
-      const newRewardSum = Math.min(
-        Number(applicablePromotion.maxValue ?? DEFAULT_MONTHLY_PROMOTION_LIMIT),
-        collectedPmInfo?.sum + possibleRewardFromTransaction,
+
+      // Get previous reward sum
+      const previousRewardSum = collectedPmInfo?.rewardSum ?? 0;
+
+      // Get promotion cap
+      const promotionCap = Number(
+        applicablePromotion.maxValue ?? DEFAULT_MONTHLY_PROMOTION_LIMIT,
       );
-      // Add to promotion progress map
+
+      const newRewardSum = Math.min(
+        promotionCap,
+        previousRewardSum + possibleRewardFromTransaction,
+      );
+
+      // Update promotion progress
       promotionProgressMap.set(pmCollectorKey, {
         promotion: applicablePromotion,
         month,
         rewardSum: newRewardSum,
       });
-      // Add to transaction & transaction-specific rewards collector
+
+      // Calculate transaction-specific reward
       const calculatedRewardForTransaction = newRewardSum - previousRewardSum;
+
+      // Add to qualified transactions
       qualifiedTransactions.push({
         transaction,
         applicablePromotion,
-        calculatedReward: calculatedRewardForTransaction, // zero after reward is met
+        calculatedReward: calculatedRewardForTransaction,
       });
     }
 
