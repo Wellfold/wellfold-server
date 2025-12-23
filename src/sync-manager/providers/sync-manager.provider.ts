@@ -27,6 +27,7 @@ export class SyncManagerService {
       await this.importCards();
       await this.importTransactions();
       await this.runMetrics();
+      await this.setCardLinkDatesOnMmebers();
     } catch (e) {
       console.error(e);
     }
@@ -96,6 +97,55 @@ export class SyncManagerService {
     }
 
     bar.stop();
+  }
+
+  async setCardLinkDatesOnMmebers() {
+    console.log(`Syncing card link dates on members.`);
+    const memberBatchSize = 250;
+    let pageNumber = 1;
+
+    try {
+      while (true) {
+        const memberList = await this.database.getMany(
+          Member,
+          memberBatchSize,
+          memberBatchSize * pageNumber,
+        );
+        console.log(
+          `Setting card link dates on page ${pageNumber}: ${
+            memberList.length
+          } ${Member.name.toLowerCase()}s`,
+        );
+
+        if (!memberList.length) break;
+        const newMemberList = [];
+        for (let i = 0; i < memberList.length; i++) {
+          const member = memberList[i];
+          const cardList = await this.database.getByProperty(
+            Card,
+            `memberId`,
+            member.externalUuid,
+          );
+
+          const newMember: Member = {
+            ...memberList[i],
+            cardLinked: cardList.length > 0,
+            cardLinkedDate:
+              cardList.length > 0
+                ? !member.cardLinked
+                  ? new Date()
+                  : member.cardLinkedDate
+                : null,
+          };
+          newMemberList.push(newMember);
+        }
+        await this.database.upsertMany(Member, newMemberList);
+        if (memberList.length < memberBatchSize) break;
+        pageNumber++;
+      }
+    } catch (e) {
+      console.error(e);
+    }
   }
 
   /**
