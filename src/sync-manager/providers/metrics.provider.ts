@@ -1,28 +1,43 @@
 import { UtilityService } from '@/common/providers/utility.service';
-// [x] Loop through members
-// [x] Get transactions by member
-// [x] Sum them all, for iniital #
-// Save that in a prop on the user
 
 import { Member, Program, Promotion, Transaction } from '@/common/entities';
 import { DatabaseService } from '@/common/providers/database.service';
 import { Injectable } from '@nestjs/common';
 
-// Later -- further process GMV
-// -- adjust by program
-// -- adjust by redemption
-
-// Unlikely to be > 1 million programs
-const PROGRAM_PROMOTION_LIMIT = 1000000;
+const PROGRAM_PROMOTION_LIMIT = 1000000; // Unlikely to be > 1 million programs
+const DEFAULT_MONTHLY_PROMOTION_LIMIT = 10; // In dollars
+const PROGRAM_PROMOTION_PULL_INTERVAL = 1 * 60 * 60 * 1000; // 1 hour
 
 @Injectable()
 export class MetricsService {
   constructor(
     protected database: DatabaseService,
     protected utility: UtilityService,
-  ) {}
+  ) {
+    setInterval(() => {
+      this.init();
+    }, PROGRAM_PROMOTION_PULL_INTERVAL);
+  }
   protected programs: Program[];
   protected promotions: Promotion[];
+
+  protected async init() {
+    console.log(`Pulling new programs and promotions.`);
+    this.programs = await this.database.getMany(
+      Program,
+      PROGRAM_PROMOTION_LIMIT,
+      0,
+      {},
+      true,
+    );
+    this.promotions = await this.database.getMany(
+      Promotion,
+      PROGRAM_PROMOTION_LIMIT,
+      0,
+      {},
+      true,
+    );
+  }
 
   constructMemberMetricEntities(
     member: Member,
@@ -46,10 +61,20 @@ export class MetricsService {
 
   async calculateGmvAndRewards(member: Member) {
     const transactions = await this.getTransactions(member);
+    const { qualifiedTransactions, promotionProgress } =
+      this.getPromotionProgressAndQualifiedTransactions(member, transactions);
     return {
       totalGmv: await this.getTotalGmv(transactions),
-      qualifiedGmv: await this.getQualifiedGmv(member, transactions),
-      rewards: await this.getRewards(member, transactions),
+      qualifiedGmv: await this.getQualifiedGmv(qualifiedTransactions),
+      rewards: await this.getRewardsBalance(promotionProgress, transactions),
+      qualifiedTransactionsArray: qualifiedTransactions.map(
+        (transactionWrapper) => {
+          return {
+            ...transactionWrapper.transaction,
+            wellfoldCalculatedReward: transactionWrapper.calculatedReward,
+          };
+        },
+      ),
     };
   }
 
@@ -67,44 +92,19 @@ export class MetricsService {
     return [...transactionsOlive, ...transactionsLoyalize];
   }
 
-  async getQualifiedGmv(member: Member, transactions: Transaction[]) {
-    if (!this.programs) {
-      this.programs = await this.database.getMany(
-        Program,
-        PROGRAM_PROMOTION_LIMIT,
-        0,
-        {},
-        true,
-      );
-    }
-    if (!this.promotions) {
-      this.promotions = await this.database.getMany(
-        Promotion,
-        PROGRAM_PROMOTION_LIMIT,
-        0,
-        {},
-        true,
-      );
-    }
-
-    const memberMerchantCategoryCodeList =
-      this.getMemberMerchantCategoryCodeList(member);
-
-    return transactions.reduce((sum: number, transaction) => {
-      if (
-        memberMerchantCategoryCodeList.includes(
-          transaction.merchantCategoryCode,
-        )
-      ) {
-        return (
-          sum +
-            this.utility.convertRoundedAmountIntoAmount(
-              Number(transaction.roundedAmount),
-            ) || 0
-        );
-      }
-      return sum;
-    }, 0);
+  async getQualifiedGmv(
+    qualifiedTransactions: {
+      transaction: Transaction;
+      applicablePromotion: Promotion;
+      calculatedReward: number;
+    }[],
+  ) {
+    return qualifiedTransactions.reduce(
+      (sum: number, qualifiedTransactionDatum) => {
+        return sum + qualifiedTransactionDatum.calculatedReward;
+      },
+      0,
+    );
   }
 
   async getTotalGmv(transactions: Transaction[]) {
@@ -119,49 +119,107 @@ export class MetricsService {
     }, 0);
   }
 
-  getRewards(member: Member, transactions: Transaction[]): number {
-    const mccSet = new Set(this.getMemberMerchantCategoryCodeList(member));
-
-    const MONTHLY_LIMIT = 10;
-    const RATE = 0.02;
-
-    const monthlyTotals: Record<string, number> = {};
-
-    for (const tx of transactions) {
-      if (tx.isRedemption) continue;
-      if (!mccSet.has(tx.merchantCategoryCode)) continue;
-
-      const d = tx.created;
-      const month = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(
-        2,
-        `0`,
-      )}`;
-
-      const reward =
-        this.utility.convertRoundedAmountIntoAmount(Number(tx.roundedAmount)) *
-        RATE;
-
-      const current = monthlyTotals[month] ?? 0;
-      monthlyTotals[month] = Math.min(MONTHLY_LIMIT, current + reward);
+  protected getPromotionProgressAndQualifiedTransactions(
+    member: Member,
+    transactions: Transaction[],
+  ) {
+    const qualifiedTransactions: {
+      transaction: Transaction;
+      applicablePromotion: Promotion;
+      calculatedReward: number;
+    }[] = [];
+    const promotionProgressMap = new Map();
+    const memberPromotions = this.getMemberPromotions(member);
+    // Figure out Wellfold-specific rewards
+    for (const transaction of transactions) {
+      // Don't count redemptions or Olive rewards transactions (will add later)
+      if (transaction.isRedemption || transaction.rewardAmount) continue;
+      // Get transaction date & month
+      const transactionDate = transaction.created;
+      const month = `${transactionDate.getFullYear()}${String(
+        transactionDate.getMonth() + 1,
+      ).padStart(2, `0`)}`;
+      // Find the first applicable promotion to this transaction
+      const applicablePromotion = memberPromotions.find(
+        (promotion) =>
+          promotion.mccCodes.includes(transaction.merchantCategoryCode) &&
+          promotion.startDate.getTime() <= transaction.created.getTime() &&
+          promotion.endDate.getTime() >= transaction.created.getTime(),
+      );
+      // Calculate the *possible* reward from the transaction
+      const possibleRewardFromTransaction =
+        Number(transaction.amount) * (Number(applicablePromotion.value) / 100);
+      // Get the collected promotion & previous WF rewards sum if it exists in the collection
+      const pmCollectorKey = `${applicablePromotion.id}__${month}`;
+      const collectedPmInfo = promotionProgressMap.get(pmCollectorKey);
+      const previousRewardSum = collectedPmInfo?.sum ?? 0;
+      const newRewardSum = Math.min(
+        Number(applicablePromotion.maxValue ?? DEFAULT_MONTHLY_PROMOTION_LIMIT),
+        collectedPmInfo?.sum + possibleRewardFromTransaction,
+      );
+      // Add to promotion progress map
+      promotionProgressMap.set(pmCollectorKey, {
+        promotion: applicablePromotion,
+        month,
+        rewardSum: newRewardSum,
+      });
+      // Add to transaction & transaction-specific rewards collector
+      const calculatedRewardForTransaction = newRewardSum - previousRewardSum;
+      qualifiedTransactions.push({
+        transaction,
+        applicablePromotion,
+        calculatedReward: calculatedRewardForTransaction, // zero after reward is met
+      });
     }
 
-    return Object.values(monthlyTotals).reduce((sum, value) => sum + value, 0);
+    return {
+      promotionProgress: Array.from(promotionProgressMap.values()),
+      qualifiedTransactions,
+    };
+  }
+
+  getRewardsBalance(
+    promotionProgress: {
+      promotion: Promotion;
+      month: string;
+      rewardSum: number;
+    }[],
+    allTransactions: Transaction[],
+  ): number {
+    // Sum promotion progress month sum to get total Wellfold rewards.
+    const wfRewardBalance: number = promotionProgress.reduce(
+      (sum, obj) => sum + obj.rewardSum,
+      0,
+    );
+    // Sum olive rewards, which are separate.
+    const oliveRewardBalance = allTransactions.reduce(
+      (oliveRewardsSum: number, transaction) => {
+        return oliveRewardsSum + Number(transaction.rewardAmount);
+      },
+      0,
+    );
+
+    return wfRewardBalance + oliveRewardBalance;
+  }
+
+  getMemberPromotions(member: Member) {
+    return this.promotions.filter(
+      (promotion) => promotion.programId === member.programId,
+    );
   }
 
   getMemberMerchantCategoryCodeList(member: Member) {
-    // Get promotions associated w/ user's program
-    const memberPromotions = this.promotions.filter(
-      (promotion) => promotion.programId === member.programId,
+    return this.getMemberPromotions(member).reduce(
+      (list: number[], promotion) => {
+        const promotionMccCodes = promotion.mccCodes ?? [];
+        promotionMccCodes.forEach((code: number) => {
+          if (!list.includes(code)) {
+            list.push(code);
+          }
+        });
+        return list;
+      },
+      [],
     );
-
-    return memberPromotions.reduce((list: number[], promotion) => {
-      const promotionMccCodes = promotion.mccCodes ?? [];
-      promotionMccCodes.forEach((code: number) => {
-        if (!list.includes(code)) {
-          list.push(code);
-        }
-      });
-      return list;
-    }, []);
   }
 }

@@ -46,6 +46,9 @@ export class OliveService implements TransactionsPuller {
         return {
           ...item,
           oliveMemberId: item.memberId,
+          amount: this.utility.convertRoundedAmountIntoAmount(
+            item.roundedAmount,
+          ),
         };
       }),
     };

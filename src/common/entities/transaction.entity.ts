@@ -77,6 +77,9 @@ export class Transaction implements HasExternalUuid, HasInternalCreatedUpdated {
   rewardAmount: string | null; // Olive.rewardAmount OR Loyalize.shopperCommission
 
   @Column({ type: `numeric`, precision: 18, scale: 2, nullable: true })
+  wellfoldCalculatedReward: string | null;
+
+  @Column({ type: `numeric`, precision: 18, scale: 2, nullable: true })
   roundedAmount: string | null; // Olive-only
 
   @Column({ type: `numeric`, precision: 18, scale: 2, nullable: true })

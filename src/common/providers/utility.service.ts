@@ -8,7 +8,7 @@ export class UtilityService {
       .join(`&`);
   }
 
-  convertRoundedAmountIntoAmount(roundedAmount: number) {
-    return Number((roundedAmount / 0.05).toFixed(2));
+  convertRoundedAmountIntoAmount(roundedAmount: number | string) {
+    return Number((Number(roundedAmount) / 0.05).toFixed(2));
   }
 }

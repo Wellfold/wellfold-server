@@ -53,6 +53,7 @@ export class SyncManagerService {
     while (hasMore) {
       const updatedMembers = [];
       const updatedMetrics = [];
+      const updatedTransactions = [];
       const memberBatch = await this.database.getMany(
         Member,
         batchSize,
@@ -62,7 +63,7 @@ export class SyncManagerService {
       if (!memberBatch?.length) break;
 
       for (const member of memberBatch) {
-        const { totalGmv, qualifiedGmv, rewards } =
+        const { totalGmv, qualifiedGmv, rewards, qualifiedTransactionsArray } =
           await this.metrics.calculateGmvAndRewards(member);
 
         updatedMembers.push({
@@ -79,6 +80,7 @@ export class SyncManagerService {
             rewards,
           ),
         );
+        updatedTransactions.push(...qualifiedTransactionsArray);
         bar.increment();
       }
 
@@ -88,7 +90,7 @@ export class SyncManagerService {
         updatedMetrics,
         `uniqueMemberMetricId`,
       );
-
+      await this.database.upsertMany(Transaction, updatedTransactions);
       offset += batchSize;
       hasMore = memberBatch.length === batchSize;
     }
