@@ -1,10 +1,12 @@
 import {
   Column,
+  CreateDateColumn,
   Entity,
   Index,
   JoinColumn,
   ManyToOne,
   PrimaryGeneratedColumn,
+  UpdateDateColumn,
 } from 'typeorm';
 import { Member } from './member.entity';
 
@@ -38,4 +40,10 @@ export class MemberMetric {
     nullable: true,
   })
   value?: string;
+
+  @CreateDateColumn({ type: `timestamptz`, name: `created` })
+  createdInternally: Date;
+
+  @UpdateDateColumn({ type: `timestamptz`, name: `updated` })
+  updatedInternally: Date;
 }

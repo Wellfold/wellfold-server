@@ -5,7 +5,7 @@ import { DatabaseService } from '@/common/providers/database.service';
 import { Injectable } from '@nestjs/common';
 
 const PROGRAM_PROMOTION_LIMIT = 1000000; // Unlikely to be > 1 million programs
-const DEFAULT_MONTHLY_PROMOTION_LIMIT = 10; // In dollars
+const DEFAULT_MONTHLY_PROMOTION_CAP = 10; // In dollars
 const PROGRAM_PROMOTION_PULL_INTERVAL = 1 * 60 * 60 * 1000; // 1 hour
 
 @Injectable()
@@ -157,7 +157,7 @@ export class MetricsService {
       const transactionDate = transaction.created;
       const month = `${transactionDate.getFullYear()}${String(
         transactionDate.getMonth() + 1,
-      ).padStart(2, `0`)}`;
+      ).padStart(2, `0`)}`; // `202511`
 
       // Find first applicable promotion, don't do anything if none
       const applicablePromotion = memberPromotions.find(
@@ -171,19 +171,21 @@ export class MetricsService {
       // Calculate possible reward
       const transactionAmount = Number(transaction.amount);
       const promotionPercent = Number(applicablePromotion.value);
+      // TODO - Consider a future where promotion type is not percent
       const possibleRewardFromTransaction =
         transactionAmount * (promotionPercent / 100);
 
       // Unique key/storage for promotion+month combination
-      const pmCollectorKey = `${applicablePromotion.id}__${month}`;
-      const collectedPmInfo = promotionProgressMap.get(pmCollectorKey);
+      const promotionProgressKey = `${applicablePromotion.id}__${month}`;
+      const promotionProgressItem =
+        promotionProgressMap.get(promotionProgressKey);
 
       // Get previous reward sum
-      const previousRewardSum = collectedPmInfo?.rewardSum ?? 0;
+      const previousRewardSum = promotionProgressItem?.rewardSum ?? 0;
 
       // Get promotion cap
       const promotionCap = Number(
-        applicablePromotion.maxValue ?? DEFAULT_MONTHLY_PROMOTION_LIMIT,
+        applicablePromotion.maxValue ?? DEFAULT_MONTHLY_PROMOTION_CAP,
       );
 
       const newRewardSum = Math.min(
@@ -192,7 +194,7 @@ export class MetricsService {
       );
 
       // Update promotion progress
-      promotionProgressMap.set(pmCollectorKey, {
+      promotionProgressMap.set(promotionProgressKey, {
         promotion: applicablePromotion,
         month,
         rewardSum: newRewardSum,
@@ -228,17 +230,20 @@ export class MetricsService {
       (sum, obj) => sum + obj.rewardSum,
       0,
     );
-    // Sum olive rewards, which are separate.
-    const oliveRewardBalance = allTransactions.reduce(
-      (oliveRewardsSum: number, transaction) => {
-        return oliveRewardsSum + Number(transaction.rewardAmount);
+    // Sum Olive & Loyalize rewards, which are separate.
+    const oliveLoyalizeRewardBalance = allTransactions.reduce(
+      (oliveLoyalizeRewardsSum: number, transaction) => {
+        return oliveLoyalizeRewardsSum + Number(transaction.rewardAmount);
       },
       0,
     );
 
-    return wfRewardBalance + oliveRewardBalance;
+    return wfRewardBalance + oliveLoyalizeRewardBalance;
   }
 
+  /**
+   * TODO - In the future, consider the situation where 1 member is part of multiple programs
+   */
   getMemberPromotions(member: Member) {
     return this.promotions.filter(
       (promotion) => promotion.programId === member.programId,

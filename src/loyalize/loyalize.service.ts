@@ -71,7 +71,7 @@ export class LoyalizeService {
       // --- Commercials ---
       currencyCode: item.currency,
       amount: Number(item.saleAmount ?? 0).toFixed(2),
-      rewardAmount: Number(item.saleAmount ?? 0).toFixed(2),
+      rewardAmount: Number(item.shopperCommission ?? 0).toFixed(2),
 
       // --- Dates ---
       created: new Date(item.purchaseDate),
