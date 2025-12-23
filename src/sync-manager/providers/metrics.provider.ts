@@ -59,7 +59,12 @@ export class MetricsService {
         value,
         uniqueMemberMetricId: `${member.wellfoldId}__${type}`,
       }))
-      .filter((metric) => !Number.isNaN(metric.value));
+      .map((metric) => {
+        return {
+          ...metric,
+          value: Number.isNaN(metric.value) ? 0 : metric.value,
+        };
+      });
   }
 
   async calculateGmvAndRewards(member: Member) {

@@ -23,7 +23,7 @@ export class Card implements HasExternalUuid, HasInternalCreatedUpdated {
   @PrimaryGeneratedColumn({ type: `bigint` })
   id: string;
 
-  @PrimaryColumn({ type: `uuid` })
+  @PrimaryColumn({ type: `text` })
   externalUuid: string;
 
   @Column({ type: `timestamptz` })
@@ -45,7 +45,7 @@ export class Card implements HasExternalUuid, HasInternalCreatedUpdated {
   active: boolean;
 
   @Index()
-  @Column({ type: `uuid` })
+  @Column({ type: `text` })
   memberId: string;
 
   @Column({ type: `varchar`, length: 100, nullable: true })
