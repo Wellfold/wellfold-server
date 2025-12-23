@@ -109,7 +109,7 @@ export class MetricsService {
   ) {
     return qualifiedTransactions.reduce(
       (sum: number, qualifiedTransactionDatum) => {
-        return sum + qualifiedTransactionDatum.calculatedReward;
+        return sum + Number(qualifiedTransactionDatum.transaction.amount);
       },
       0,
     );
