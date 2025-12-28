@@ -4,6 +4,8 @@ import {
   CreateDateColumn,
   Entity,
   Index,
+  JoinColumn,
+  ManyToOne,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
@@ -12,6 +14,7 @@ import {
   HasInternalCreatedUpdated,
   ThirdPartyOrigin,
 } from '../types/common.types';
+import { Member } from './member.entity';
 import { Reward } from './reward.entity';
 
 @Entity(`transactions`)
@@ -146,4 +149,14 @@ export class Transaction implements HasExternalUuid, HasInternalCreatedUpdated {
 
   @UpdateDateColumn({ type: `timestamptz` })
   updatedInternally: Date;
+
+  @Index()
+  @ManyToOne(() => Member, (member) => member.transactions, {
+    nullable: true,
+  })
+  @JoinColumn({
+    name: `wellfold_user_numeric_id`,
+    referencedColumnName: `numericId`,
+  })
+  member?: Member;
 }

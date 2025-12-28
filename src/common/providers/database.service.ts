@@ -2,8 +2,13 @@
 import { HasExternalUuid } from '@/common/types/common.types';
 import { Injectable } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
-import { DataSource, DeepPartial, Repository } from 'typeorm';
-
+import {
+  DataSource,
+  DeepPartial,
+  FindOptionsOrder,
+  In,
+  Repository,
+} from 'typeorm';
 @Injectable()
 export class DatabaseService {
   constructor(@InjectDataSource() private readonly dataSource: DataSource) {}
@@ -13,7 +18,8 @@ export class DatabaseService {
     record: Record<string, any>,
     idName = `externalUuid`,
   ): Promise<T> {
-    let existing: T;
+    let existing: T | null = null;
+
     try {
       existing = await repo.findOne({
         where: { [idName]: record[idName] } as any,
@@ -23,12 +29,31 @@ export class DatabaseService {
     }
 
     if (existing) {
+      const hasChanges = Object.entries(record).some(([key, incomingValue]) => {
+        // ignore undefined inputs entirely
+        if (incomingValue === undefined) return false;
+
+        const existingValue = (existing as any)[key];
+
+        // Date-safe comparison
+        if (existingValue instanceof Date && incomingValue instanceof Date) {
+          return existingValue.getTime() !== incomingValue.getTime();
+        }
+
+        return existingValue !== incomingValue;
+      });
+
+      if (!hasChanges) {
+        return existing;
+      }
+
       try {
         return await repo.save(repo.merge(existing, record as DeepPartial<T>));
       } catch (e) {
         console.error(e);
       }
     }
+
     try {
       return await repo.save(repo.create(record as T));
     } catch (e) {
@@ -79,11 +104,23 @@ export class DatabaseService {
   async getByProperty<T>(
     entityClass: new () => T,
     property: keyof T,
-    value: any,
+    valueOrValues: any | readonly any[],
+    orderBy?: keyof T,
+    orderDirection: `ASC` | `DESC` = `ASC`,
   ): Promise<T[]> {
     const repo = this.dataSource.getRepository(entityClass);
+
+    const whereValue = Array.isArray(valueOrValues)
+      ? In(valueOrValues)
+      : valueOrValues;
+
+    const order: FindOptionsOrder<T> | undefined = orderBy
+      ? ({ [orderBy]: orderDirection } as FindOptionsOrder<T>)
+      : undefined;
+
     return repo.find({
-      where: { [property]: value } as any,
+      where: { [property]: whereValue } as any,
+      order,
     });
   }
 

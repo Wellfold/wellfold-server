@@ -1,4 +1,6 @@
 import { ENV__OLIVE_API_KEY, ENV__OLIVE_CLIENT_ID } from '@/common/constants';
+import { Member } from '@/common/entities';
+import { DatabaseService } from '@/common/providers/database.service';
 import { UtilityService } from '@/common/providers/utility.service';
 import {
   GenericApiResponse,
@@ -18,6 +20,7 @@ export class OliveService implements TransactionsPuller {
     protected http: HttpService,
     protected config: ConfigService,
     protected utility: UtilityService,
+    protected database: DatabaseService,
   ) {}
   protected getConfig() {
     return {
@@ -40,6 +43,12 @@ export class OliveService implements TransactionsPuller {
         clientId: this.config.get(ENV__OLIVE_CLIENT_ID),
       },
     );
+    const memberIdList = results.items.map((item) => item.memberId);
+    const memberList = await this.database.getByProperty(
+      Member,
+      `externalUuid`,
+      memberIdList,
+    );
     return {
       ...results,
       items: results.items.map((item) => {
@@ -48,6 +57,9 @@ export class OliveService implements TransactionsPuller {
           oliveMemberId: item.memberId,
           amount: this.utility.convertRoundedAmountIntoAmount(
             item.roundedAmount,
+          ),
+          member: memberList.find(
+            (member) => item.memberId === member.externalUuid,
           ),
         };
       }),

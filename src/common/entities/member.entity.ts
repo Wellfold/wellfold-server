@@ -13,8 +13,9 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 import { MemberMetric } from './member-metric.entity';
+import { Transaction } from './transaction.entity';
 
-@Entity(`members`)
+@Entity(`users`)
 export class Member implements HasExternalUuid, HasInternalCreatedUpdated {
   @PrimaryGeneratedColumn({ type: `bigint`, name: `numeric_id` })
   numericId: string;
@@ -110,6 +111,9 @@ export class Member implements HasExternalUuid, HasInternalCreatedUpdated {
 
   @OneToMany(() => MemberMetric, (metric) => metric.member)
   metrics!: MemberMetric[];
+
+  @OneToMany(() => Transaction, (transaction) => transaction.member)
+  transactions!: Transaction[];
 
   @UpdateDateColumn({ type: `timestamptz` })
   updated: Date;

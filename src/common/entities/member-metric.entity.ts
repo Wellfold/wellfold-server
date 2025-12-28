@@ -10,7 +10,7 @@ import {
 } from 'typeorm';
 import { Member } from './member.entity';
 
-@Entity(`member_metrics`)
+@Entity(`user_metrics`)
 export class MemberMetric {
   @PrimaryGeneratedColumn({ type: `bigint`, name: `id` })
   numericId: string;
@@ -20,8 +20,8 @@ export class MemberMetric {
     nullable: true,
   })
   @JoinColumn({
-    name: `wellfold_user_id`,
-    referencedColumnName: `wellfoldId`,
+    name: `wellfold_user_numeric_id`,
+    referencedColumnName: `numericId`,
   })
   member?: Member;
 

@@ -192,7 +192,6 @@ export class SyncManagerService {
               ...rest,
             } as unknown as DeepPartial<TEntity>;
           });
-
           console.log(
             `Upserting chunk ${i / memberBatchSize + 1} of ${Math.ceil(
               items.length / memberBatchSize,

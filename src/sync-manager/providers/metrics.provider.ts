@@ -91,11 +91,13 @@ export class MetricsService {
       Transaction,
       `oliveMemberId`,
       member.externalUuid,
+      `created`,
     );
     const transactionsLoyalize = await this.database.getByProperty(
       Transaction,
       `loyalizeShopperId`,
       member.wellfoldId,
+      `created`,
     );
     return [...transactionsOlive, ...transactionsLoyalize];
   }
