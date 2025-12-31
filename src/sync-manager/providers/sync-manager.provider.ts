@@ -70,7 +70,7 @@ export class SyncManagerService {
   })
   async runMetrics() {
     try {
-      const batchSize = 100;
+      const batchSize = 50;
 
       // First get total count (fast query)
       const total = await this.database.count(Member);
