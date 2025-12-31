@@ -85,7 +85,7 @@ export class DatabaseService {
     limit: number,
     offset: number,
     where: Record<string, any> = {},
-    ignoreOrder?: boolean,
+    order?: any,
   ): Promise<T[]> {
     const repo = this.dataSource.getRepository(entityClass);
 
@@ -93,11 +93,7 @@ export class DatabaseService {
       where,
       take: limit,
       skip: offset,
-      order: ignoreOrder
-        ? undefined
-        : ({
-            createdInternally: `ASC`,
-          } as any),
+      order: !order ? undefined : (order as any),
     });
   }
 

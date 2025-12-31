@@ -107,6 +107,7 @@ export class Member implements HasExternalUuid, HasInternalCreatedUpdated {
   @Column({ type: `text`, name: `utm_link`, nullable: true })
   utmLink: string;
 
+  @Index()
   @Column({ type: `timestamptz`, name: `created_at` })
   created: Date;
 

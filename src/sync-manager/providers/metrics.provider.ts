@@ -24,20 +24,22 @@ export class MetricsService {
 
   protected async init() {
     console.log(`Pulling new programs and promotions.`);
-    this.programs = await this.database.getMany(
-      Program,
-      PROGRAM_PROMOTION_LIMIT,
-      0,
-      {},
-      true,
-    );
-    this.promotions = await this.database.getMany(
-      Promotion,
-      PROGRAM_PROMOTION_LIMIT,
-      0,
-      {},
-      true,
-    );
+    try {
+      this.programs = await this.database.getMany(
+        Program,
+        PROGRAM_PROMOTION_LIMIT,
+        0,
+        {},
+      );
+      this.promotions = await this.database.getMany(
+        Promotion,
+        PROGRAM_PROMOTION_LIMIT,
+        0,
+        {},
+      );
+    } catch (e) {
+      console.error(e);
+    }
   }
 
   constructMemberMetricEntities(

@@ -69,73 +69,88 @@ export class SyncManagerService {
     command: `run-metrics`,
   })
   async runMetrics() {
-    const batchSize = 100;
+    try {
+      const batchSize = 100;
 
-    // First get total count (fast query)
-    const total = await this.database.count(Member);
+      // First get total count (fast query)
+      const total = await this.database.count(Member);
 
-    const bar = new SingleBar(
-      {
-        format: `Processing GMV & Rewards metrics for Members |{bar}| {value}/{total} ({percentage}%)`,
-      },
-      Presets.shades_classic,
-    );
-
-    bar.start(total, 0);
-
-    let offset = 0;
-    let hasMore = true;
-
-    while (hasMore) {
-      const updatedMembers: Member[] = [];
-      const updatedMetrics = [];
-      const updatedTransactions: Transaction[] = [];
-      const memberBatch = await this.database.getMany(
-        Member,
-        batchSize,
-        offset,
+      const bar = new SingleBar(
+        {
+          format: `Processing GMV & Rewards metrics for Members |{bar}| {value}/{total} ({percentage}%)`,
+        },
+        Presets.shades_classic,
       );
 
-      if (!memberBatch?.length) break;
+      bar.start(total, 0);
 
-      for (const member of memberBatch) {
-        const {
-          totalGmv,
-          qualifiedGmv,
-          rewardsBalance,
-          qualifiedTransactionsArray,
-        } = await this.metrics.calculateGmvAndRewards(member);
+      let offset = 0;
+      let hasMore = true;
 
-        updatedMembers.push({
-          ...member,
-          totalGmv,
-          qualifiedGmv,
-          rewardsBalance,
-        });
-        updatedMetrics.push(
-          ...this.metrics.constructMemberMetricEntities(
-            member,
+      while (hasMore) {
+        const updatedMembers: Member[] = [];
+        const updatedMetrics = [];
+        const updatedTransactions: Transaction[] = [];
+        const memberBatch = await this.database.getMany(
+          Member,
+          batchSize,
+          offset,
+          {},
+          { created: `ASC` },
+        );
+
+        if (!memberBatch?.length) break;
+
+        for (const member of memberBatch) {
+          const {
             totalGmv,
             qualifiedGmv,
             rewardsBalance,
-          ),
+            qualifiedTransactionsArray,
+          } = await this.metrics.calculateGmvAndRewards(member);
+
+          updatedMembers.push({
+            ...member,
+            totalGmv,
+            qualifiedGmv,
+            rewardsBalance,
+          });
+          updatedMetrics.push(
+            ...this.metrics.constructMemberMetricEntities(
+              member,
+              totalGmv,
+              qualifiedGmv,
+              rewardsBalance,
+            ),
+          );
+          updatedTransactions.push(...qualifiedTransactionsArray);
+          bar.increment();
+        }
+
+        await this.database.upsertMany(Member, updatedMembers);
+        const testMember = updatedMembers.find(
+          (member) => member.numericId == `619`,
         );
-        updatedTransactions.push(...qualifiedTransactionsArray);
-        bar.increment();
+
+        await this.database.upsertMany(
+          MemberMetric,
+          updatedMetrics,
+          `uniqueMemberMetricId`,
+        );
+
+        await this.database.upsertMany(Transaction, updatedTransactions);
+        const testTransactions = updatedTransactions.filter((item) => item);
+        if (testMember && testTransactions.length > 0) {
+          console.log({ user619: testMember, transactions: testTransactions });
+        }
+        offset += batchSize;
+        hasMore = memberBatch.length === batchSize;
       }
 
-      await this.database.upsertMany(Member, updatedMembers);
-      await this.database.upsertMany(
-        MemberMetric,
-        updatedMetrics,
-        `uniqueMemberMetricId`,
-      );
-      await this.database.upsertMany(Transaction, updatedTransactions);
-      offset += batchSize;
-      hasMore = memberBatch.length === batchSize;
+      bar.stop();
+    } catch (e) {
+      console.error(e);
     }
-
-    bar.stop();
   }
 
   async setCardLinkDatesOnMmebers() {
