@@ -128,9 +128,9 @@ export class SyncManagerService {
         }
 
         await this.database.upsertMany(Member, updatedMembers);
-        const testMember = updatedMembers.find(
-          (member) => member.numericId == `619`,
-        );
+        // const testMember = updatedMembers.find(
+        //   (member) => member.numericId == `619`,
+        // );
 
         await this.database.upsertMany(
           MemberMetric,
@@ -139,10 +139,10 @@ export class SyncManagerService {
         );
 
         await this.database.upsertMany(Transaction, updatedTransactions);
-        const testTransactions = updatedTransactions.filter((item) => item);
-        if (testMember && testTransactions.length > 0) {
-          console.log({ user619: testMember, transactions: testTransactions });
-        }
+        // const testTransactions = updatedTransactions.filter((item) => item);
+        // if (testMember && testTransactions.length > 0) {
+        //   console.log({ user619: testMember, transactions: testTransactions });
+        // }
         offset += batchSize;
         hasMore = memberBatch.length === batchSize;
       }
