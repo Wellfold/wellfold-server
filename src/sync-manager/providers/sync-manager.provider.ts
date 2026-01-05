@@ -128,10 +128,6 @@ export class SyncManagerService {
         }
 
         await this.database.upsertMany(Member, updatedMembers);
-        // const testMember = updatedMembers.find(
-        //   (member) => member.numericId == `619`,
-        // );
-
         await this.database.upsertMany(
           MemberMetric,
           updatedMetrics,
@@ -139,10 +135,6 @@ export class SyncManagerService {
         );
 
         await this.database.upsertMany(Transaction, updatedTransactions);
-        // const testTransactions = updatedTransactions.filter((item) => item);
-        // if (testMember && testTransactions.length > 0) {
-        //   console.log({ user619: testMember, transactions: testTransactions });
-        // }
         offset += batchSize;
         hasMore = memberBatch.length === batchSize;
       }
@@ -280,6 +272,10 @@ export class SyncManagerService {
   /**
    * Import Transactions using shared logic
    */
+  @Command({
+    alias: `rti`,
+    command: `run-transaction-import`,
+  })
   async importTransactions(): Promise<void> {
     console.log(`Importing transactions from Olive.`);
     await this.importPaginated(

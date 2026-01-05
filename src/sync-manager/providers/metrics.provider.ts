@@ -132,13 +132,9 @@ export class MetricsService {
 
   async getTotalGmv(transactions: Transaction[]) {
     return transactions.reduce((sum: number, transaction) => {
-      if (transaction.isRedemption) return sum;
-      return (
-        sum +
-        (this.utility.convertRoundedAmountIntoAmount(
-          Number(transaction.roundedAmount),
-        ) || 0)
-      );
+      if (transaction.isRedemption || transaction.thirdPartyOrigin !== `olive`)
+        return sum;
+      return sum + Number(transaction.amount);
     }, 0);
   }
 

@@ -1,4 +1,6 @@
 import { ENV__LOYALIZE_API_KEY } from '@/common/constants';
+import { Member } from '@/common/entities';
+import { DatabaseService } from '@/common/providers/database.service';
 import { UtilityService } from '@/common/providers/utility.service';
 import { GenericApiResponse } from '@/common/types/common.types';
 import { HttpService } from '@nestjs/axios';
@@ -16,6 +18,7 @@ export class LoyalizeService {
     protected http: HttpService,
     protected config: ConfigService,
     protected utility: UtilityService,
+    protected database: DatabaseService,
   ) {}
 
   protected getConfig() {
@@ -41,22 +44,33 @@ export class LoyalizeService {
     const response: any = await lastValueFrom(
       this.http.get(url, this.getConfig()),
     );
+    const rawTransactions = response?.content ?? [];
+    const userUuidList = rawTransactions.map((item) => item.shopperId);
+    const transactions = rawTransactions.map((item) =>
+      this.mapLoyalizeTransactionToGeneric(item),
+    );
 
+    const userList = await this.database.getByProperty(
+      Member,
+      `wellfoldId`,
+      userUuidList,
+    );
     const result = {
       totalNumberOfPages: response.totalPages ?? 0,
       totalNumberOfRecords: response.totalElements ?? 0,
-      items: response?.content
-        ? response.content.map((item) =>
-            this.mapLoyalizeTransactionToGeneric(item),
-          )
-        : [],
+      items: transactions.map((transaction) => {
+        return {
+          ...transaction,
+          member: userList.find(
+            (user) => user.wellfoldId === transaction.loyalizeShopperId,
+          ),
+        };
+      }),
     } as GenericApiResponse;
     return result;
   }
 
-  protected mapLoyalizeTransactionToGeneric(
-    item: LoyalizeTransactionApiItem,
-  ): any {
+  protected mapLoyalizeTransactionToGeneric(item: LoyalizeTransactionApiItem) {
     const settlementDate = item.paymentDate ? new Date(item.paymentDate) : null;
 
     return {
