@@ -187,7 +187,7 @@ export class MetricsService {
 
       // Unique key/storage for promotion+month combination
       const capType = applicablePromotion.capType ?? `monthly`;
-      const promotionTerm = capType === `quarterly` ? month : yearAndQuarter;
+      const promotionTerm = capType === `quarterly` ? yearAndQuarter : month;
       const promotionProgressKey = `${applicablePromotion.id}__${promotionTerm}`;
       const promotionProgressItem =
         promotionProgressMap.get(promotionProgressKey);

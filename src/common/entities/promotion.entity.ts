@@ -9,6 +9,9 @@ export class Promotion {
   @Column({ type: `text`, nullable: true, name: `name` })
   name?: string;
 
+  @Column({ type: `text`, nullable: true, name: `notes` })
+  notes?: string;
+
   @Column({ type: `text`, nullable: true, name: `program_id` })
   programId?: string;
 
