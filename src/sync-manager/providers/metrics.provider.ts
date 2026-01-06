@@ -3,6 +3,7 @@ import { UtilityService } from '@/common/providers/utility.service';
 import { Member, Program, Promotion, Transaction } from '@/common/entities';
 import { DatabaseService } from '@/common/providers/database.service';
 import { Injectable } from '@nestjs/common';
+import { PromotionProgressItem } from '../sync-manager.types';
 
 const PROGRAM_PROMOTION_LIMIT = 1000000; // Unlikely to be > 1 million programs
 const DEFAULT_MONTHLY_PROMOTION_CAP = 10; // In dollars
@@ -112,7 +113,9 @@ export class MetricsService {
       member.wellfoldId,
       `created`,
     );
-    return [...transactionsOlive, ...transactionsLoyalize];
+    return [...transactionsOlive, ...transactionsLoyalize].sort(
+      (a, b) => a.created.getTime() - b.created.getTime(),
+    );
   }
 
   async getQualifiedGmv(
@@ -148,14 +151,7 @@ export class MetricsService {
       calculatedReward: number;
     }[] = [];
 
-    const promotionProgressMap = new Map<
-      string,
-      {
-        promotion: Promotion;
-        month: string;
-        rewardSum: number;
-      }
-    >();
+    const promotionProgressMap = new Map<string, PromotionProgressItem>();
 
     // Find promotions that apply to member
     const memberPromotions = this.getMemberPromotions(member);
@@ -169,6 +165,9 @@ export class MetricsService {
       const month = `${transactionDate.getFullYear()}${String(
         transactionDate.getMonth() + 1,
       ).padStart(2, `0`)}`; // `202511`
+      const year = transactionDate.getFullYear();
+      const quarter = Math.floor(transactionDate.getMonth() / 3) + 1;
+      const yearAndQuarter = `${year}Q${quarter}`;
 
       // Find first applicable promotion, don't do anything if none
       const applicablePromotion = memberPromotions.find(
@@ -187,7 +186,9 @@ export class MetricsService {
         transactionAmount * (promotionPercent / 100);
 
       // Unique key/storage for promotion+month combination
-      const promotionProgressKey = `${applicablePromotion.id}__${month}`;
+      const capType = applicablePromotion.capType ?? `monthly`;
+      const promotionTerm = capType === `quarterly` ? month : yearAndQuarter;
+      const promotionProgressKey = `${applicablePromotion.id}__${promotionTerm}`;
       const promotionProgressItem =
         promotionProgressMap.get(promotionProgressKey);
 
@@ -207,7 +208,8 @@ export class MetricsService {
       // Update promotion progress
       promotionProgressMap.set(promotionProgressKey, {
         promotion: applicablePromotion,
-        month,
+        promotionTerm,
+        capType,
         rewardSum: newRewardSum,
       });
 
@@ -229,14 +231,10 @@ export class MetricsService {
   }
 
   getRewardsBalance(
-    promotionProgress: {
-      promotion: Promotion;
-      month: string;
-      rewardSum: number;
-    }[],
+    promotionProgress: PromotionProgressItem[],
     allTransactions: Transaction[],
   ): number {
-    // Sum promotion progress month sum to get total Wellfold rewards.
+    // Sum promotion progress term sum to get total Wellfold rewards.
     const wfRewardBalance: number = promotionProgress.reduce(
       (sum, obj) => sum + obj.rewardSum,
       0,

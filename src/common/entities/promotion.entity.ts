@@ -1,4 +1,5 @@
 import { Column, Entity, PrimaryColumn } from 'typeorm';
+import { PromotionCapType } from '../types/common.types';
 
 @Entity(`promotions`)
 export class Promotion {
@@ -31,6 +32,9 @@ export class Promotion {
 
   @Column({ type: `text`, nullable: true, name: `type` })
   type?: string;
+
+  @Column({ type: `text`, nullable: true, name: `cap_type` })
+  capType?: PromotionCapType;
 
   @Column({ type: `text`, nullable: true, name: `program_name` })
   programName?: string;

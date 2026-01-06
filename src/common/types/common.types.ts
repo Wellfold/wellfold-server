@@ -18,3 +18,5 @@ export type GenericApiResponse = {
   totalNumberOfRecords: number;
   items: any[];
 };
+
+export type PromotionCapType = `monthly` | `quarterly`;
