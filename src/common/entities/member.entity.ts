@@ -64,7 +64,7 @@ export class Member implements HasExternalUuid, HasInternalCreatedUpdated {
   @Column({ type: `text`, name: `external_id`, nullable: true })
   wellfoldArbitraryExternalId: string;
 
-  @Column({ type: `boolean`, default: true, nullable: true })
+  @Column({ type: `boolean`, default: true, nullable: true, name: `is_active` })
   isActive: boolean;
 
   @Column({

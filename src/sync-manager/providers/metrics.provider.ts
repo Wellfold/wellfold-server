@@ -197,10 +197,18 @@ export class MetricsService {
         const userMetricsItem =
           userMetrics.get(user.numericId) ?? defaultUserMetricsItem;
         const { metrics, promotionProgress } = userMetricsItem;
-        // Unique key/storage for promotion+month combination
+        // Unique key/storage for promotion+promotion term combination
         const capType = applicablePromotion.capType ?? `monthly`;
-        const promotionTerm =
-          capType === `quarterly` ? yearAndQuarter : yearAndMonth;
+        let promotionTerm = yearAndMonth;
+        switch (capType) {
+          case `monthly`:
+            promotionTerm = yearAndMonth;
+          case `quarterly`:
+            promotionTerm = yearAndQuarter;
+          case `yearly`:
+            promotionTerm = `${year}`;
+        }
+
         const promotionProgressKey = `${applicablePromotion.id}__${promotionTerm}`;
         const promotionProgressItem =
           promotionProgress.get(promotionProgressKey);

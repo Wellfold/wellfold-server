@@ -19,4 +19,4 @@ export type GenericApiResponse = {
   items: any[];
 };
 
-export type PromotionCapType = `monthly` | `quarterly`;
+export type PromotionCapType = `monthly` | `quarterly` | `yearly`;
