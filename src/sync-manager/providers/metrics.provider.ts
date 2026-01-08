@@ -1,6 +1,13 @@
 import { UtilityService } from '@/common/providers/utility.service';
+import { Presets, SingleBar } from 'cli-progress';
 
-import { Member, Program, Promotion, Transaction } from '@/common/entities';
+import {
+  Member,
+  MemberMetric,
+  Program,
+  Promotion,
+  Transaction,
+} from '@/common/entities';
 import { DatabaseService } from '@/common/providers/database.service';
 import { Injectable } from '@nestjs/common';
 import { PromotionProgressItem } from '../sync-manager.types';
@@ -52,7 +59,7 @@ export class MetricsService {
     const metrics = [
       { type: `total_gmv`, value: totalGmvValue },
       { type: `qualified_gmv`, value: qualifiedGmvValue },
-      { type: `rewards`, value: rewardsValue },
+      { type: `total_rewards`, value: rewardsValue },
     ];
 
     return metrics
@@ -70,34 +77,288 @@ export class MetricsService {
       });
   }
 
-  async calculateGmvAndRewards(member: Member): Promise<{
-    totalGmv: string;
-    qualifiedGmv: string;
-    rewardsBalance: string;
-    qualifiedTransactionsArray: Transaction[];
-  }> {
-    const transactions = await this.getTransactions(member);
-    const { qualifiedTransactions, promotionProgress } =
-      this.getPromotionProgressAndQualifiedTransactions(member, transactions);
-    return {
-      totalGmv: (await this.getTotalGmv(transactions)).toString(),
-      qualifiedGmv: (
-        await this.getQualifiedGmv(qualifiedTransactions)
-      ).toString(),
-      rewardsBalance: await this.getRewardsBalance(
-        promotionProgress,
-        transactions,
-      ).toString(),
-      qualifiedTransactionsArray: qualifiedTransactions.map(
-        (transactionWrapper) => {
-          return {
-            ...transactionWrapper.transaction,
-            wellfoldCalculatedReward:
-              transactionWrapper.calculatedReward?.toString(),
-          };
+  async calculateAndSaveMetrics() {
+    const userMetrics = new Map<
+      number,
+      {
+        userId: number;
+        promotionProgress: Map<string, PromotionProgressItem>;
+        metrics: {
+          totalGmv: number;
+          qualifiedGmv: number;
+          cumulativeRewards: number;
+          externalRewards: number;
+        };
+      }
+    >();
+    const batchSize = 50;
+    const transactionSaveCollectionSize = 50;
+    let transactionSaveCollection = [];
+    const total = await this.database.count(Transaction);
+
+    const bar = new SingleBar(
+      {
+        format: `Calculating GMV & Rewards metrics based on all transactions |{bar}| {value}/{total} ({percentage}%)`,
+      },
+      Presets.shades_classic,
+    );
+
+    bar.start(total, 0);
+    let offset = 0;
+    let hasMore = true;
+    while (hasMore) {
+      const transactionBatch = await this.database.getMany(
+        Transaction,
+        batchSize,
+        offset,
+        {},
+        { created: `ASC` },
+        {
+          member: true,
         },
-      ),
-    };
+      );
+
+      if (!transactionBatch?.length) break;
+      for (const transaction of transactionBatch) {
+        bar.increment();
+        // Skip redemptions
+        if (transaction.isRedemption) continue;
+
+        const user = transaction.member;
+
+        if (!user) {
+          continue;
+        }
+
+        const defaultUserMetricsItem = {
+          userId: user.numericId,
+          metrics: {
+            totalGmv: 0,
+            qualifiedGmv: 0,
+            cumulativeRewards: 0,
+            externalRewards: 0,
+          },
+          promotionProgress: new Map<string, PromotionProgressItem>(),
+        };
+
+        if (transaction.rewardAmount) {
+          const userMetricsItem =
+            userMetrics.get(user.numericId) ?? defaultUserMetricsItem;
+          userMetrics.set(user.numericId, {
+            ...userMetricsItem,
+            metrics: {
+              ...userMetricsItem.metrics,
+              externalRewards:
+                userMetricsItem.metrics.externalRewards +
+                Number(transaction.rewardAmount),
+            },
+          });
+          continue;
+        }
+
+        // Increment total GMV
+        if (transaction.thirdPartyOrigin !== `loyalize`) {
+          const userMetricsItem =
+            userMetrics.get(user.numericId) ?? defaultUserMetricsItem;
+          userMetrics.set(user.numericId, {
+            ...userMetricsItem,
+            metrics: {
+              ...userMetricsItem.metrics,
+              totalGmv:
+                userMetricsItem.metrics.qualifiedGmv +
+                Number(transaction.amount),
+            },
+          });
+        }
+
+        // Find first applicable promotion, don't do anything if none
+        const transactionDate = transaction.created;
+        const userPromotions = this.getMemberPromotions(user);
+        const applicablePromotion = userPromotions.find(
+          (promotion) =>
+            promotion.mccCodes.includes(transaction.merchantCategoryCode) &&
+            promotion.startDate.getTime() <= transactionDate.getTime() &&
+            promotion.endDate.getTime() >= transactionDate.getTime(),
+        );
+        if (!applicablePromotion) continue;
+        // Format transaction time options
+        const yearAndMonth = `${transactionDate.getFullYear()}${String(
+          transactionDate.getMonth() + 1,
+        ).padStart(2, `0`)}`; // `202511`
+        const year = transactionDate.getFullYear();
+        const quarter = Math.floor(transactionDate.getMonth() / 3) + 1;
+        const yearAndQuarter = `${year}Q${quarter}`; // `2025Q2`
+        const transactionAmount = Number(transaction.amount);
+        const promotionPercent = Number(applicablePromotion.value);
+        // TODO - Consider a future where promotion type is not percent
+        const possibleRewardFromTransaction =
+          transactionAmount * (promotionPercent / 100);
+
+        const userMetricsItem =
+          userMetrics.get(user.numericId) ?? defaultUserMetricsItem;
+        const { metrics, promotionProgress } = userMetricsItem;
+        // Unique key/storage for promotion+month combination
+        const capType = applicablePromotion.capType ?? `monthly`;
+        const promotionTerm =
+          capType === `quarterly` ? yearAndQuarter : yearAndMonth;
+        const promotionProgressKey = `${applicablePromotion.id}__${promotionTerm}`;
+        const promotionProgressItem =
+          promotionProgress.get(promotionProgressKey);
+
+        // Get previous reward sum
+        const previousRewardSum = promotionProgressItem?.rewardSum ?? 0;
+
+        // Get promotion cap
+        const promotionCap = Number(
+          applicablePromotion.maxValue ?? DEFAULT_MONTHLY_PROMOTION_CAP,
+        );
+
+        const newRewardSum = Math.min(
+          promotionCap,
+          previousRewardSum + possibleRewardFromTransaction,
+        );
+
+        // Update promotion progress
+        promotionProgress.set(promotionProgressKey, {
+          promotion: applicablePromotion,
+          promotionTerm,
+          capType,
+          rewardSum: newRewardSum,
+        });
+
+        // Calculate transaction-specific reward
+        const wellfoldCalculatedReward = newRewardSum - previousRewardSum;
+        const newTransaction = {
+          ...transaction,
+          wellfoldCalculatedReward,
+        };
+        transactionSaveCollection.push(newTransaction);
+        userMetrics.set(user.numericId, {
+          ...userMetricsItem,
+          metrics: {
+            ...metrics,
+            qualifiedGmv: metrics.qualifiedGmv + Number(transaction.amount),
+            cumulativeRewards:
+              metrics.cumulativeRewards + wellfoldCalculatedReward,
+          },
+          promotionProgress,
+        });
+      }
+      if (transactionSaveCollection.length >= transactionSaveCollectionSize) {
+        await this.database.upsertMany(Transaction, transactionSaveCollection);
+        transactionSaveCollection = [];
+      }
+      offset += batchSize;
+      hasMore = transactionBatch.length === batchSize;
+    }
+    bar.stop();
+    if (transactionSaveCollection.length) {
+      await this.database.upsertMany(Transaction, transactionSaveCollection);
+      transactionSaveCollection = [];
+    }
+
+    const metricsBar = new SingleBar(
+      {
+        format: `Saving metric entities across users |{bar}| {value}/{total} ({percentage}%)`,
+      },
+      Presets.shades_classic,
+    );
+
+    // 1️⃣ Existing metrics
+    const userMetricsList = Array.from(userMetrics.values());
+
+    // 2️⃣ Pull ONLY numeric IDs (no entity hydration)
+    const allUserIds = await this.database.getPropertyValues(
+      Member,
+      `numericId`,
+    );
+
+    // 3️⃣ Fast set math
+    const metricsUserIdSet = new Set(
+      userMetricsList.map((m) => String(m.userId)),
+    );
+
+    const nullUserIds = allUserIds.filter(
+      (id) => !metricsUserIdSet.has(String(id)),
+    );
+
+    // 4️⃣ Combine workload
+    const allWork = [
+      ...userMetricsList.map((m) => ({
+        userId: m.userId,
+        metrics: m.metrics,
+      })),
+      ...nullUserIds.map((id) => ({
+        userId: id,
+        metrics: {
+          totalGmv: 0,
+          qualifiedGmv: 0,
+          cumulativeRewards: 0,
+          externalRewards: 0,
+        },
+      })),
+    ];
+
+    metricsBar.start(allWork.length, 0);
+
+    // 5️⃣ Batch-safe processing
+    const BATCH_SIZE = 100;
+    let saveBatch = [];
+
+    for (let i = 0; i < allWork.length; i += BATCH_SIZE) {
+      const chunk = allWork.slice(i, i + BATCH_SIZE);
+
+      // Fetch only needed users for this chunk
+      const members = await this.database.getByProperty(
+        Member,
+        `numericId`,
+        chunk.map((c) => c.userId),
+      );
+
+      const memberById = new Map(members.map((m) => [String(m.numericId), m]));
+
+      for (const item of chunk) {
+        const member = memberById.get(String(item.userId));
+        if (!member) {
+          metricsBar.increment();
+          continue;
+        }
+
+        const { totalGmv, qualifiedGmv, cumulativeRewards, externalRewards } =
+          item.metrics;
+
+        const entities = this.constructMemberMetricEntities(
+          member,
+          totalGmv,
+          qualifiedGmv,
+          cumulativeRewards + externalRewards,
+        );
+
+        saveBatch.push(...entities);
+        metricsBar.increment();
+      }
+
+      // Flush saves in controlled chunks
+      if (saveBatch.length >= BATCH_SIZE) {
+        await this.database.upsertMany(
+          MemberMetric,
+          saveBatch,
+          `uniqueMemberMetricId`,
+        );
+        saveBatch = [];
+      }
+    }
+
+    // Final flush
+    if (saveBatch.length) {
+      await this.database.upsertMany(
+        MemberMetric,
+        saveBatch,
+        `uniqueMemberMetricId`,
+      );
+    }
+
+    metricsBar.stop();
   }
 
   async getTransactions(member: Member) {
@@ -116,118 +377,6 @@ export class MetricsService {
     return [...transactionsOlive, ...transactionsLoyalize].sort(
       (a, b) => a.created.getTime() - b.created.getTime(),
     );
-  }
-
-  async getQualifiedGmv(
-    qualifiedTransactions: {
-      transaction: Transaction;
-      applicablePromotion: Promotion;
-      calculatedReward: number;
-    }[],
-  ) {
-    return qualifiedTransactions.reduce(
-      (sum: number, qualifiedTransactionDatum) => {
-        return sum + Number(qualifiedTransactionDatum.transaction.amount);
-      },
-      0,
-    );
-  }
-
-  async getTotalGmv(transactions: Transaction[]) {
-    return transactions.reduce((sum: number, transaction) => {
-      if (transaction.isRedemption || transaction.thirdPartyOrigin !== `olive`)
-        return sum;
-      return sum + Number(transaction.amount);
-    }, 0);
-  }
-
-  protected getPromotionProgressAndQualifiedTransactions(
-    member: Member,
-    transactions: Transaction[],
-  ) {
-    const qualifiedTransactions: {
-      transaction: Transaction;
-      applicablePromotion: Promotion;
-      calculatedReward: number;
-    }[] = [];
-
-    const promotionProgressMap = new Map<string, PromotionProgressItem>();
-
-    // Find promotions that apply to member
-    const memberPromotions = this.getMemberPromotions(member);
-
-    for (const transaction of transactions) {
-      // Skip redemptions or already-rewarded transactions
-      if (transaction.isRedemption || transaction.rewardAmount) continue;
-
-      // Get transaction date and month
-      const transactionDate = transaction.created;
-      const month = `${transactionDate.getFullYear()}${String(
-        transactionDate.getMonth() + 1,
-      ).padStart(2, `0`)}`; // `202511`
-      const year = transactionDate.getFullYear();
-      const quarter = Math.floor(transactionDate.getMonth() / 3) + 1;
-      const yearAndQuarter = `${year}Q${quarter}`;
-
-      // Find first applicable promotion, don't do anything if none
-      const applicablePromotion = memberPromotions.find(
-        (promotion) =>
-          promotion.mccCodes.includes(transaction.merchantCategoryCode) &&
-          promotion.startDate.getTime() <= transactionDate.getTime() &&
-          promotion.endDate.getTime() >= transactionDate.getTime(),
-      );
-      if (!applicablePromotion) continue;
-
-      // Calculate possible reward
-      const transactionAmount = Number(transaction.amount);
-      const promotionPercent = Number(applicablePromotion.value);
-      // TODO - Consider a future where promotion type is not percent
-      const possibleRewardFromTransaction =
-        transactionAmount * (promotionPercent / 100);
-
-      // Unique key/storage for promotion+month combination
-      const capType = applicablePromotion.capType ?? `monthly`;
-      const promotionTerm = capType === `quarterly` ? yearAndQuarter : month;
-      const promotionProgressKey = `${applicablePromotion.id}__${promotionTerm}`;
-      const promotionProgressItem =
-        promotionProgressMap.get(promotionProgressKey);
-
-      // Get previous reward sum
-      const previousRewardSum = promotionProgressItem?.rewardSum ?? 0;
-
-      // Get promotion cap
-      const promotionCap = Number(
-        applicablePromotion.maxValue ?? DEFAULT_MONTHLY_PROMOTION_CAP,
-      );
-
-      const newRewardSum = Math.min(
-        promotionCap,
-        previousRewardSum + possibleRewardFromTransaction,
-      );
-
-      // Update promotion progress
-      promotionProgressMap.set(promotionProgressKey, {
-        promotion: applicablePromotion,
-        promotionTerm,
-        capType,
-        rewardSum: newRewardSum,
-      });
-
-      // Calculate transaction-specific reward
-      const calculatedRewardForTransaction = newRewardSum - previousRewardSum;
-
-      // Add to qualified transactions
-      qualifiedTransactions.push({
-        transaction,
-        applicablePromotion,
-        calculatedReward: calculatedRewardForTransaction,
-      });
-    }
-
-    return {
-      promotionProgress: Array.from(promotionProgressMap.values()),
-      qualifiedTransactions,
-    };
   }
 
   getRewardsBalance(

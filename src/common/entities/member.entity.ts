@@ -19,7 +19,7 @@ import { Transaction } from './transaction.entity';
 @Entity(`users`)
 export class Member implements HasExternalUuid, HasInternalCreatedUpdated {
   @PrimaryGeneratedColumn({ type: `bigint`, name: `numeric_id` })
-  numericId: string;
+  numericId: number;
 
   @Index()
   @Column({ type: `uuid`, unique: true, name: `id`, nullable: true })

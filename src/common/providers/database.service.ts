@@ -86,6 +86,7 @@ export class DatabaseService {
     offset: number,
     where: Record<string, any> = {},
     order?: any,
+    relations?: any,
   ): Promise<T[]> {
     const repo = this.dataSource.getRepository(entityClass);
 
@@ -94,6 +95,7 @@ export class DatabaseService {
       take: limit,
       skip: offset,
       order: !order ? undefined : (order as any),
+      relations,
     });
   }
 
@@ -122,5 +124,32 @@ export class DatabaseService {
 
   async count<T>(entityClass: new () => T): Promise<number> {
     return this.dataSource.getRepository(entityClass).count();
+  }
+
+  async getPropertyValues<T, K extends keyof T>(
+    entityClass: new () => T,
+    selectProperty: K,
+    where: Partial<Record<keyof T, any>> = {},
+    distinct = false,
+  ): Promise<T[K][]> {
+    const repo = this.dataSource.getRepository(entityClass);
+
+    const qb = repo
+      .createQueryBuilder(`e`)
+      .select(`e.${String(selectProperty)}`, String(selectProperty));
+
+    Object.entries(where).forEach(([key, value], index) => {
+      qb.andWhere(`e.${key} = :value${index}`, {
+        [`value${index}`]: value,
+      });
+    });
+
+    if (distinct) {
+      qb.distinct(true);
+    }
+
+    const rows = await qb.getRawMany();
+
+    return rows.map((row) => row[selectProperty as string]);
   }
 }

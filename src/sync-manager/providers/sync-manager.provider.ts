@@ -1,9 +1,8 @@
-import { Card, Member, MemberMetric, Transaction } from '@/common/entities';
+import { Card, Member, Transaction } from '@/common/entities';
 import { DatabaseService } from '@/common/providers/database.service';
 import { HasExternalUuid, ThirdPartyOrigin } from '@/common/types/common.types';
 import { LoyalizeService } from '@/loyalize/loyalize.service';
 import { OliveService } from '@/olive/olive.service';
-import { Presets, SingleBar } from 'cli-progress';
 import { Command, Console } from 'nestjs-console';
 import { DeepPartial } from 'typeorm';
 import { MetricsService } from './metrics.provider';
@@ -34,115 +33,11 @@ export class SyncManagerService {
   }
 
   @Command({
-    alias: `rmbuni`,
-    command: `run-metrics-by-member-numeric-id <userNumericId>`,
-  })
-  async runMetricsByMemberNumericId(userNumericId: string) {
-    const memberList = await this.database.getByProperty(
-      Member,
-      `numericId`,
-      userNumericId,
-    );
-    if (memberList.length < 1) {
-      console.error(`No user found with that Numeric ID.`);
-      return;
-    }
-    const member = memberList[0];
-    const {
-      qualifiedTransactionsArray,
-      totalGmv,
-      qualifiedGmv,
-      rewardsBalance,
-    } = await this.metrics.calculateGmvAndRewards(member);
-    try {
-      await await this.database.upsertMany(Member, [
-        { ...member, totalGmv, qualifiedGmv, rewardsBalance },
-      ]);
-      await this.database.upsertMany(Transaction, qualifiedTransactionsArray);
-    } catch (e) {
-      console.error(e);
-    }
-  }
-
-  @Command({
     alias: `rm`,
     command: `run-metrics`,
   })
   async runMetrics() {
-    try {
-      const batchSize = 50;
-
-      // First get total count (fast query)
-      const total = await this.database.count(Member);
-
-      const bar = new SingleBar(
-        {
-          format: `Processing GMV & Rewards metrics for Members |{bar}| {value}/{total} ({percentage}%)`,
-        },
-        Presets.shades_classic,
-      );
-
-      bar.start(total, 0);
-
-      let offset = 0;
-      let hasMore = true;
-
-      while (hasMore) {
-        const updatedMembers: Member[] = [];
-        const updatedMetrics = [];
-        const updatedTransactions: Transaction[] = [];
-        const memberBatch = await this.database.getMany(
-          Member,
-          batchSize,
-          offset,
-          {},
-          { created: `ASC` },
-        );
-
-        if (!memberBatch?.length) break;
-
-        for (const member of memberBatch) {
-          const {
-            totalGmv,
-            qualifiedGmv,
-            rewardsBalance,
-            qualifiedTransactionsArray,
-          } = await this.metrics.calculateGmvAndRewards(member);
-
-          updatedMembers.push({
-            ...member,
-            totalGmv,
-            qualifiedGmv,
-            rewardsBalance,
-          });
-          updatedMetrics.push(
-            ...this.metrics.constructMemberMetricEntities(
-              member,
-              totalGmv,
-              qualifiedGmv,
-              rewardsBalance,
-            ),
-          );
-          updatedTransactions.push(...qualifiedTransactionsArray);
-          bar.increment();
-        }
-
-        await this.database.upsertMany(Member, updatedMembers);
-        await this.database.upsertMany(
-          MemberMetric,
-          updatedMetrics,
-          `uniqueMemberMetricId`,
-        );
-
-        await this.database.upsertMany(Transaction, updatedTransactions);
-        offset += batchSize;
-        hasMore = memberBatch.length === batchSize;
-      }
-
-      bar.stop();
-    } catch (e) {
-      console.error(e);
-    }
+    await this.metrics.calculateAndSaveMetrics();
   }
 
   async setCardLinkDatesOnMmebers() {
