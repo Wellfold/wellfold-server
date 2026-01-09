@@ -14,6 +14,7 @@ import {
 } from 'typeorm';
 import { Card } from './card.entity';
 import { MemberMetric } from './member-metric.entity';
+import { Redemption } from './redemption.entity';
 import { Transaction } from './transaction.entity';
 
 @Entity(`users`)
@@ -119,6 +120,9 @@ export class Member implements HasExternalUuid, HasInternalCreatedUpdated {
 
   @OneToMany(() => Card, (card) => card.member)
   cards?: Card[];
+
+  @OneToMany(() => Redemption, (redemption) => redemption.member)
+  redemptions?: Redemption[];
 
   @UpdateDateColumn({ type: `timestamptz` })
   updated: Date;

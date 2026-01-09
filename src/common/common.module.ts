@@ -13,6 +13,7 @@ import {
   MemberMetric,
   Program,
   Promotion,
+  Redemption,
   Reward,
   Transaction,
 } from './entities';
@@ -44,6 +45,7 @@ import { UtilityService } from './providers/utility.service';
       Card,
       Member,
       MemberMetric,
+      Redemption,
       Reward,
       Program,
       Promotion,

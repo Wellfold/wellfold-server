@@ -6,6 +6,7 @@ import {
   MemberMetric,
   Program,
   Promotion,
+  Redemption,
   Transaction,
 } from '@/common/entities';
 import { DatabaseService } from '@/common/providers/database.service';
@@ -50,7 +51,7 @@ export class MetricsService {
     }
   }
 
-  constructMemberMetricEntities(
+  async constructMemberMetricEntities(
     member: Member,
     totalGmvValue: number | string,
     qualifiedGmvValue: number | string,
@@ -61,8 +62,8 @@ export class MetricsService {
       { type: `qualified_gmv`, value: qualifiedGmvValue },
       { type: `total_rewards`, value: rewardsValue },
     ];
-
-    return metrics
+    const redemptionsMetric = await this.getRedemptionMetricPerUser(member);
+    const transformedMetrics = metrics
       .map(({ type, value }) => ({
         member,
         type,
@@ -75,6 +76,8 @@ export class MetricsService {
           value: Number.isNaN(metric.value) ? 0 : metric.value,
         };
       });
+    transformedMetrics.push(redemptionsMetric);
+    return transformedMetrics;
   }
 
   async calculateAndSaveMetrics() {
@@ -335,7 +338,7 @@ export class MetricsService {
         const { totalGmv, qualifiedGmv, cumulativeRewards, externalRewards } =
           item.metrics;
 
-        const entities = this.constructMemberMetricEntities(
+        const entities = await this.constructMemberMetricEntities(
           member,
           totalGmv,
           qualifiedGmv,
@@ -367,6 +370,81 @@ export class MetricsService {
     }
 
     metricsBar.stop();
+  }
+
+  async getRedemptionMetricPerUser(user: Member) {
+    const redemptionList = await this.database.getByProperty(
+      Redemption,
+      `memberId`,
+      user.externalUuid,
+    );
+    return {
+      member: user,
+      type: `total_redemptions`,
+      value: redemptionList.reduce(
+        (sum, redemption) => sum + Number(redemption.amount),
+        0,
+      ),
+      uniqueMemberMetricId: `${user.wellfoldId}__total_redemptions`,
+    };
+  }
+
+  async resaveRedemptionsWithUserIdAndProgramId() {
+    console.log(`Resaving redemptions with user ID and program ID.`);
+    const total = await this.database.count(Redemption);
+    const bar = new SingleBar(
+      {
+        format: `Calculating GMV & Rewards metrics based on all transactions |{bar}| {value}/{total} ({percentage}%)`,
+      },
+      Presets.shades_classic,
+    );
+    bar.start(total, 0);
+    let offset = 0;
+    let hasMore = true;
+    const batchSize = 100;
+    const redemptionsToSaveLimit = 100;
+    let redemptionsToSave = [];
+    while (hasMore) {
+      const redemptionBatch = await this.database.getMany(
+        Redemption,
+        batchSize,
+        offset,
+        {},
+        { createdAt: `ASC` },
+      );
+      if (!redemptionBatch?.length) break;
+      for (const redemption of redemptionBatch) {
+        bar.increment();
+        const userList = await this.database.getByProperty(
+          Member,
+          `externalUuid`,
+          redemption.memberId,
+        );
+        if (!userList.length) continue;
+        const user = userList[0];
+        const program = this.programs.find(
+          (item) =>
+            item?.name.toLowerCase() === redemption?.programName.toLowerCase(),
+        );
+
+        redemptionsToSave.push({
+          ...redemption,
+          member: user,
+          programId: program?.programId,
+        });
+        if (redemptionsToSave.length >= redemptionsToSaveLimit) {
+          await this.database.upsertMany(Redemption, redemptionsToSave, `id`);
+          redemptionsToSave = [];
+        }
+      }
+      if (redemptionsToSave.length) {
+        await this.database.upsertMany(Redemption, redemptionsToSave, `id`);
+        redemptionsToSave = [];
+      }
+      offset += batchSize;
+      hasMore = redemptionBatch.length === batchSize;
+    }
+    bar.stop();
   }
 
   async getTransactions(member: Member) {

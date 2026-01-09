@@ -26,7 +26,8 @@ export class SyncManagerService {
       await this.importCards();
       await this.importTransactions();
       await this.runMetrics();
-      await this.setCardLinkDatesOnMmebers();
+      await this.setCardLinkDatesOnMembers();
+      await this.handleRedemptions();
     } catch (e) {
       console.error(e);
     }
@@ -40,7 +41,7 @@ export class SyncManagerService {
     await this.metrics.calculateAndSaveMetrics();
   }
 
-  async setCardLinkDatesOnMmebers() {
+  async setCardLinkDatesOnMembers() {
     console.log(`Syncing card link dates on members.`);
     const memberBatchSize = 250;
     let pageNumber = 1;
@@ -198,5 +199,13 @@ export class SyncManagerService {
       Card,
       `olive`,
     );
+  }
+
+  @Command({
+    alias: `hr`,
+    command: `handle-redemptions`,
+  })
+  async handleRedemptions() {
+    await this.metrics.resaveRedemptionsWithUserIdAndProgramId();
   }
 }
