@@ -6,6 +6,7 @@ import {
   DB_TYPE,
   ENV__DB_URL_NAME,
   ENV__IS_DEV,
+  ENV__SYNC_DB_SCHEMA,
 } from './constants/global.constants';
 import {
   Card,
@@ -35,7 +36,7 @@ import { UtilityService } from './providers/utility.service';
           url: config.get(ENV__DB_URL_NAME),
           ssl: { rejectUnauthorized: false },
           autoLoadEntities: true,
-          synchronize: true,
+          synchronize: config.get(ENV__SYNC_DB_SCHEMA) ? true : false,
           extra: { max: 10 },
           namingStrategy: new PrefixNamingStrategy(prefix),
         };
