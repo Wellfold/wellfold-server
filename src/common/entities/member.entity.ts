@@ -7,11 +7,15 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  Generated,
   Index,
+  JoinColumn,
+  ManyToOne,
   OneToMany,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
+import { AuthUser } from './auth.user.entity';
 import { Card } from './card.entity';
 import { MemberMetric } from './member-metric.entity';
 import { Redemption } from './redemption.entity';
@@ -19,11 +23,11 @@ import { Transaction } from './transaction.entity';
 
 @Entity(`users`)
 export class Member implements HasExternalUuid, HasInternalCreatedUpdated {
-  @PrimaryGeneratedColumn({ type: `bigint`, name: `numeric_id` })
+  @Generated(`increment`)
+  @Column({ type: `bigint`, name: `numeric_id`, unique: true, nullable: true })
   numericId: number;
 
-  @Index()
-  @Column({ type: `uuid`, unique: true, name: `id`, nullable: true })
+  @PrimaryGeneratedColumn(`uuid`, { name: `id` })
   wellfoldId?: string;
 
   @Index()
@@ -58,9 +62,18 @@ export class Member implements HasExternalUuid, HasInternalCreatedUpdated {
   @Column({ type: `text`, name: `password`, nullable: true })
   password?: string;
 
-  @Index()
-  @Column({ type: `uuid`, nullable: true, name: `auth_user_id` })
+  @Column({ type: `uuid`, name: `auth_user_id`, nullable: true })
   authUserId?: string;
+
+  @ManyToOne(() => AuthUser, {
+    nullable: true,
+    createForeignKeyConstraints: false,
+  })
+  @JoinColumn({
+    name: `auth_user_id`,
+    referencedColumnName: `id`,
+  })
+  authUser?: AuthUser;
 
   @Column({ type: `text`, name: `external_id`, nullable: true })
   wellfoldArbitraryExternalId: string;

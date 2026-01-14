@@ -38,7 +38,11 @@ export class SyncManagerService {
     command: `run-metrics`,
   })
   async runMetrics() {
-    await this.metrics.calculateAndSaveMetrics();
+    try {
+      await this.metrics.calculateAndSaveMetrics();
+    } catch (e) {
+      console.error(e);
+    }
   }
 
   async setCardLinkDatesOnMembers() {

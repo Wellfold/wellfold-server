@@ -9,6 +9,7 @@ import {
   ENV__SYNC_DB_SCHEMA,
 } from './constants/global.constants';
 import {
+  AuthUser,
   Card,
   Member,
   MemberMetric,
@@ -43,6 +44,7 @@ import { UtilityService } from './providers/utility.service';
       },
     }),
     TypeOrmModule.forFeature([
+      AuthUser,
       Card,
       Member,
       MemberMetric,
