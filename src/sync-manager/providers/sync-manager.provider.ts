@@ -72,15 +72,17 @@ export class SyncManagerService {
             `memberId`,
             member.externalUuid,
           );
-
+          const areThereActiveCards =
+            cardList.filter((card) => card.active).length > 0;
+          const firstTimeCardLinked = member.cardLinkedDate;
           const newMember: Member = {
             ...memberList[i],
-            cardLinked: cardList.length > 0,
+            cardLinked: areThereActiveCards,
             cardLinkedDate:
-              cardList.length > 0
-                ? !member.cardLinked
+              firstTimeCardLinked || cardList.length > 0
+                ? !firstTimeCardLinked
                   ? new Date()
-                  : member.cardLinkedDate
+                  : firstTimeCardLinked
                 : null,
           };
           newMemberList.push(newMember);

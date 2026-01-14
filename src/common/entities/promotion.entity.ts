@@ -15,7 +15,7 @@ export class Promotion {
   @Column({ type: `text`, nullable: true, name: `program_id` })
   programId?: string;
 
-  @Column({ type: `jsonb`, nullable: true, name: `mcc_codes` })
+  @Column({ type: `numeric`, nullable: true, name: `mcc_codes`, array: true })
   mccCodes?: number[];
 
   @Column({ type: `timestamptz`, nullable: true, name: `start_date` })
