@@ -67,7 +67,8 @@ export class Member implements HasExternalUuid, HasInternalCreatedUpdated {
 
   @ManyToOne(() => AuthUser, {
     nullable: true,
-    createForeignKeyConstraints: false,
+    onDelete: `SET NULL`,
+    createForeignKeyConstraints: true,
   })
   @JoinColumn({
     name: `auth_user_id`,
