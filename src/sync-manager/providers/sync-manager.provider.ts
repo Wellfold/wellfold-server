@@ -28,6 +28,8 @@ export class SyncManagerService {
       await this.runMetrics();
       await this.setCardLinkDatesOnMembers();
       await this.handleRedemptions();
+      await this.saveRewardsBalanceMetric();
+      console.log(`All done!`);
     } catch (e) {
       console.error(e);
     }
@@ -213,5 +215,13 @@ export class SyncManagerService {
   })
   async handleRedemptions() {
     await this.metrics.resaveRedemptionsWithUserIdAndProgramId();
+  }
+
+  @Command({
+    alias: `rb`,
+    command: `rewards-balances`,
+  })
+  async saveRewardsBalanceMetric() {
+    await this.metrics.saveRewardsBalanceMetric();
   }
 }

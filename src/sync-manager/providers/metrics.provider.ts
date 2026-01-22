@@ -55,12 +55,13 @@ export class MetricsService {
     member: Member,
     totalGmvValue: number | string,
     qualifiedGmvValue: number | string,
-    rewardsValue: number | string,
+    totalRewardsValue: number | string,
   ) {
     const metrics = [
       { type: `total_gmv`, value: totalGmvValue },
       { type: `qualified_gmv`, value: qualifiedGmvValue },
-      { type: `total_rewards`, value: rewardsValue },
+      { type: `total_rewards`, value: totalRewardsValue },
+      { type: `rewards_balance`, value: 0 },
     ];
     const redemptionsMetric = await this.getRedemptionMetricPerUser(member);
     const transformedMetrics = metrics
@@ -68,7 +69,7 @@ export class MetricsService {
         member,
         type,
         value,
-        uniqueMemberMetricId: `${member.wellfoldId}__${type}`,
+        uniqueMemberMetricId: this.getUniqueUserMetricId(member, type),
       }))
       .map((metric) => {
         return {
@@ -78,6 +79,10 @@ export class MetricsService {
       });
     transformedMetrics.push(redemptionsMetric);
     return transformedMetrics;
+  }
+
+  protected getUniqueUserMetricId(user: Member, type: string) {
+    return `${user.wellfoldId}__${type}`;
   }
 
   async calculateAndSaveMetrics() {
@@ -133,6 +138,7 @@ export class MetricsService {
     };
 
     let offset = 0;
+    // Process transactions, break when no more transactions to process
     while (true) {
       const transactions = await this.database.getMany(
         Transaction,
@@ -236,16 +242,14 @@ export class MetricsService {
       Presets.shades_classic,
     );
 
-    // 1️⃣ Existing metrics
+    // Existing metrics
     const userMetricsList = Array.from(userMetrics.values());
 
-    // 2️⃣ Pull ONLY numeric IDs (no entity hydration)
     const allUserIds = await this.database.getPropertyValues(
       Member,
       `numericId`,
     );
 
-    // 3️⃣ Fast set math
     const metricsUserIdSet = new Set(
       userMetricsList.map((m) => String(m.userId)),
     );
@@ -254,7 +258,6 @@ export class MetricsService {
       (id) => !metricsUserIdSet.has(String(id)),
     );
 
-    // 4️⃣ Combine workload
     const allWork = [
       ...userMetricsList.map((m) => ({
         userId: m.userId,
@@ -273,7 +276,6 @@ export class MetricsService {
 
     metricsBar.start(allWork.length, 0);
 
-    // 5️⃣ Batch-safe processing
     const BATCH_SIZE = 100;
     let saveBatch = [];
 
@@ -404,6 +406,73 @@ export class MetricsService {
       }
       offset += batchSize;
       hasMore = redemptionBatch.length === batchSize;
+    }
+    bar.stop();
+  }
+
+  async saveRewardsBalanceMetric() {
+    const metricType = `rewards_balance`;
+    const saveBufferSize = 100;
+    let saveBuffer = [];
+    const allUserIds = await this.database.getPropertyValues(
+      Member,
+      `numericId`,
+    );
+    const bar = new SingleBar(
+      {
+        format: `Saving rewards balance metric for all users. |{bar}| {value}/{total} ({percentage}%)`,
+      },
+      Presets.shades_classic,
+    );
+    bar.start(allUserIds.length, 0);
+
+    for (const userId of allUserIds) {
+      bar.increment();
+      const userList = await this.database.getByProperty(
+        Member,
+        `numericId`,
+        userId,
+      );
+      const user = userList[0];
+      if (!user) continue;
+      const metricPayload = {
+        member: user,
+        type: metricType,
+        uniqueMemberMetricId: this.getUniqueUserMetricId(user, metricType),
+        value: 0,
+      };
+      const metricsList = await this.database.getMany(MemberMetric, 5, 0, {
+        member: { numericId: user.numericId },
+      });
+      const totalRewards = metricsList.find(
+        (metric) => metric.type === `total_rewards`,
+      );
+      const totalRedemptions = metricsList.find(
+        (metric) => metric.type === `total_redemptions`,
+      );
+      if (totalRewards && totalRedemptions) {
+        metricPayload.value = Math.max(
+          Number(totalRewards.value) - Number(totalRedemptions.value),
+          0,
+        );
+      }
+      saveBuffer.push(metricPayload);
+      if (saveBuffer.length >= saveBufferSize) {
+        await this.database.upsertMany(
+          MemberMetric,
+          saveBuffer,
+          `uniqueMemberMetricId`,
+        );
+        saveBuffer = [];
+      }
+    }
+    if (saveBuffer.length) {
+      await this.database.upsertMany(
+        MemberMetric,
+        saveBuffer,
+        `uniqueMemberMetricId`,
+      );
+      saveBuffer = [];
     }
     bar.stop();
   }
