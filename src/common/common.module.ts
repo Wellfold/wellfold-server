@@ -19,11 +19,13 @@ import {
   Reward,
   Transaction,
 } from './entities';
-
-import { DatabaseService } from './providers/database.service';
-import { HttpInterceptorProvider } from './providers/http.interceptor';
-import { PrefixNamingStrategy } from './providers/prefix-naming.strategy';
-import { UtilityService } from './providers/utility.service';
+import {
+  DatabaseService,
+  HttpInterceptorProvider,
+  OutdatedMetrics,
+  PrefixNamingStrategy,
+  UtilityService,
+} from './providers';
 
 @Module({
   imports: [
@@ -63,8 +65,8 @@ import { UtilityService } from './providers/utility.service';
   providers: [
     DatabaseService,
     HttpInterceptorProvider,
-    DatabaseService,
     UtilityService,
+    OutdatedMetrics,
   ],
   exports: [HttpModule, ConfigModule, DatabaseService, UtilityService],
 })
