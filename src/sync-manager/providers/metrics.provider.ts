@@ -83,7 +83,7 @@ export class MetricsService {
   async calculateAndSaveMetrics() {
     const userMetrics = new Map<number, UserMetricsItem>();
     const batchSize = 50;
-    let saveBuffer: Transaction[] = [];
+    let transactionResaveBuffer: Transaction[] = [];
     const saveBatchSize = 50;
     const total = await this.database.count(Transaction);
 
@@ -168,6 +168,7 @@ export class MetricsService {
           metricsItem.metrics.totalGmv += Number(transaction.amount);
         }
 
+        // Find the first applicable promotion
         const promotions = this.getMemberPromotions(user);
         if (!promotions.length) continue;
 
@@ -194,7 +195,7 @@ export class MetricsService {
           metricsItem.promotionProgress.get(progressKey)?.rewardSum ?? 0;
 
         const cap = Number(promotion.maxValue ?? DEFAULT_MONTHLY_PROMOTION_CAP);
-
+        // Most important line
         const newRewardSum = Math.min(cap, progress + potentialReward);
         const calculatedReward = newRewardSum - progress;
 
@@ -208,15 +209,15 @@ export class MetricsService {
         metricsItem.metrics.qualifiedGmv += amount;
         metricsItem.metrics.cumulativeRewards += calculatedReward;
 
-        saveBuffer.push({
+        transactionResaveBuffer.push({
           ...transaction,
           wellfoldCalculatedReward: calculatedReward.toString(),
         });
       }
 
-      if (saveBuffer.length >= saveBatchSize) {
-        await this.database.upsertMany(Transaction, saveBuffer);
-        saveBuffer = [];
+      if (transactionResaveBuffer.length >= saveBatchSize) {
+        await this.database.upsertMany(Transaction, transactionResaveBuffer);
+        transactionResaveBuffer = [];
       }
 
       offset += batchSize;
@@ -224,8 +225,8 @@ export class MetricsService {
 
     bar.stop();
 
-    if (saveBuffer.length) {
-      await this.database.upsertMany(Transaction, saveBuffer);
+    if (transactionResaveBuffer.length) {
+      await this.database.upsertMany(Transaction, transactionResaveBuffer);
     }
 
     const metricsBar = new SingleBar(

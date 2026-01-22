@@ -152,4 +152,39 @@ export class DatabaseService {
 
     return rows.map((row) => row[selectProperty as string]);
   }
+
+  async getPropertyValuesMany<T, K extends readonly (keyof T)[]>(
+    entityClass: new () => T,
+    selectProperties: K,
+    where: Partial<Record<keyof T, any>> = {},
+    distinct = false,
+  ): Promise<Array<Pick<T, K[number]>>> {
+    const repo = this.dataSource.getRepository(entityClass);
+
+    const qb = repo.createQueryBuilder(`e`);
+
+    selectProperties.forEach((prop) => {
+      qb.addSelect(`e.${String(prop)}`, String(prop));
+    });
+
+    Object.entries(where).forEach(([key, value], index) => {
+      qb.andWhere(`e.${key} = :value${index}`, {
+        [`value${index}`]: value,
+      });
+    });
+
+    if (distinct) {
+      qb.distinct(true);
+    }
+
+    const rows = await qb.getRawMany();
+
+    return rows.map((row) => {
+      const result: Partial<T> = {};
+      selectProperties.forEach((prop) => {
+        result[prop] = row[String(prop)];
+      });
+      return result as Pick<T, K[number]>;
+    });
+  }
 }
