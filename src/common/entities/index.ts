@@ -7,3 +7,4 @@ export * from './promotion.entity';
 export * from './redemption.entity';
 export * from './reward.entity';
 export * from './transaction.entity';
+export * from './user-promotion-status.entity';

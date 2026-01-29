@@ -18,6 +18,7 @@ import {
   Redemption,
   Reward,
   Transaction,
+  UserPromotionStatus,
 } from './entities';
 import {
   DatabaseService,
@@ -55,6 +56,7 @@ import {
       Program,
       Promotion,
       Transaction,
+      UserPromotionStatus,
     ]),
     HttpModule.register({
       timeout: 200000,

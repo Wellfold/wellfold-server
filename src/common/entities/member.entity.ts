@@ -20,6 +20,7 @@ import { Card } from './card.entity';
 import { MemberMetric } from './member-metric.entity';
 import { Redemption } from './redemption.entity';
 import { Transaction } from './transaction.entity';
+import { UserPromotionStatus } from './user-promotion-status.entity';
 
 @Entity(`users`)
 export class Member implements HasExternalUuid, HasInternalCreatedUpdated {
@@ -127,6 +128,12 @@ export class Member implements HasExternalUuid, HasInternalCreatedUpdated {
 
   @OneToMany(() => MemberMetric, (metric) => metric.member)
   metrics!: MemberMetric[];
+
+  @OneToMany(
+    () => UserPromotionStatus,
+    (promotionStatus) => promotionStatus.user,
+  )
+  promotionStatusList!: UserPromotionStatus[];
 
   @OneToMany(() => Transaction, (transaction) => transaction.member)
   transactions?: Transaction[];

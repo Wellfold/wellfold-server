@@ -20,3 +20,10 @@ export type GenericApiResponse = {
 };
 
 export type PromotionCapType = `monthly` | `quarterly` | `yearly`;
+
+export type UserMetricType =
+  | `qualified_gmv`
+  | `total_gmv`
+  | `total_rewards`
+  | `total_redemptions`
+  | `rewards_balance`;
