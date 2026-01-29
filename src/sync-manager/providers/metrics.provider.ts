@@ -8,9 +8,11 @@ import {
   Promotion,
   Redemption,
   Transaction,
+  UserPromotionStatus,
 } from '@/common/entities';
 import { DatabaseService } from '@/common/providers/database.service';
 import { Injectable } from '@nestjs/common';
+import { MoreThan } from 'typeorm';
 import { PromotionProgressItem, UserMetricsItem } from '../sync-manager.types';
 
 const PROGRAM_PROMOTION_LIMIT = 1000000; // Unlikely to be > 1 million programs
@@ -144,7 +146,7 @@ export class MetricsService {
         Transaction,
         batchSize,
         offset,
-        {},
+        { created: MoreThan(new Date(`2026-01-15T00:00:00.000Z`)) },
         { created: `ASC` },
         { member: true },
       );
@@ -258,10 +260,20 @@ export class MetricsService {
       (id) => !metricsUserIdSet.has(String(id)),
     );
 
-    const allWork = [
-      ...userMetricsList.map((m) => ({
-        userId: m.userId,
-        metrics: m.metrics,
+    const allWork: {
+      userId: number;
+      metrics: {
+        totalGmv: number;
+        qualifiedGmv: number;
+        cumulativeRewards: number;
+        externalRewards: number;
+      };
+      promotionProgress: Map<string, PromotionProgressItem> | null;
+    }[] = [
+      ...userMetricsList.map((userMetricsItem) => ({
+        userId: userMetricsItem.userId,
+        metrics: userMetricsItem.metrics,
+        promotionProgress: userMetricsItem.promotionProgress,
       })),
       ...nullUserIds.map((id) => ({
         userId: id,
@@ -271,6 +283,7 @@ export class MetricsService {
           cumulativeRewards: 0,
           externalRewards: 0,
         },
+        promotionProgress: null,
       })),
     ];
 
@@ -278,7 +291,7 @@ export class MetricsService {
 
     const BATCH_SIZE = 100;
     let saveBatch = [];
-
+    let userPromotionStatusSaveBatch = [];
     for (let i = 0; i < allWork.length; i += BATCH_SIZE) {
       const chunk = allWork.slice(i, i + BATCH_SIZE);
 
@@ -300,7 +313,21 @@ export class MetricsService {
 
         const { totalGmv, qualifiedGmv, cumulativeRewards, externalRewards } =
           item.metrics;
-
+        const progressAcrossPromotions = Array.from(
+          item.promotionProgress?.values() ?? [],
+        );
+        const userPromotionStatusList = progressAcrossPromotions.map(
+          (progressItem) => {
+            const { promotion } = progressItem;
+            return {
+              user: member,
+              uniquePromotionUserId: `promotion__${promotion.id}__user__${member.numericId}`,
+              promotion,
+              hasHitCap: Number(promotion.maxValue) <= progressItem.rewardSum,
+            };
+          },
+        );
+        userPromotionStatusSaveBatch.push(...userPromotionStatusList);
         const entities = await this.constructMemberMetricEntities(
           member,
           totalGmv,
@@ -319,7 +346,13 @@ export class MetricsService {
           saveBatch,
           `uniqueMemberMetricId`,
         );
+        await this.database.upsertMany(
+          UserPromotionStatus,
+          userPromotionStatusSaveBatch,
+          `uniquePromotionUserId`,
+        );
         saveBatch = [];
+        userPromotionStatusSaveBatch = [];
       }
     }
 
@@ -329,6 +362,11 @@ export class MetricsService {
         MemberMetric,
         saveBatch,
         `uniqueMemberMetricId`,
+      );
+      await this.database.upsertMany(
+        UserPromotionStatus,
+        userPromotionStatusSaveBatch,
+        `uniquePromotionUserId`,
       );
     }
 
