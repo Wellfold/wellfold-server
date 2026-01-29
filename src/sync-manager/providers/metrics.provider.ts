@@ -12,7 +12,6 @@ import {
 } from '@/common/entities';
 import { DatabaseService } from '@/common/providers/database.service';
 import { Injectable } from '@nestjs/common';
-import { MoreThan } from 'typeorm';
 import { PromotionProgressItem, UserMetricsItem } from '../sync-manager.types';
 
 const PROGRAM_PROMOTION_LIMIT = 1000000; // Unlikely to be > 1 million programs
@@ -146,7 +145,7 @@ export class MetricsService {
         Transaction,
         batchSize,
         offset,
-        { created: MoreThan(new Date(`2026-01-15T00:00:00.000Z`)) },
+        {},
         { created: `ASC` },
         { member: true },
       );
