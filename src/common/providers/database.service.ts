@@ -82,8 +82,8 @@ export class DatabaseService {
 
   async getMany<T>(
     entityClass: new () => T,
-    limit: number,
-    offset: number,
+    limit?: number,
+    offset?: number,
     where: Record<string, any> = {},
     order?: any,
     relations?: any,
@@ -92,8 +92,8 @@ export class DatabaseService {
 
     return repo.find({
       where,
-      take: limit,
-      skip: offset,
+      take: limit ?? undefined,
+      skip: offset ?? undefined,
       order: !order ? undefined : (order as any),
       relations,
     });

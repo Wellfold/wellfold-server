@@ -19,7 +19,7 @@ export class UserPromotionStatus {
   uniquePromotionUserId: string;
 
   @Index()
-  @ManyToOne(() => Member, (member) => member.metrics, {
+  @ManyToOne(() => Member, (member) => member.promotionStatusList, {
     nullable: true,
   })
   @JoinColumn({
