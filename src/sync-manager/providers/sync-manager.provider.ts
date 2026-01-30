@@ -115,6 +115,7 @@ export class SyncManagerService {
     ) => Promise<{ items: TRecord[] }>,
     entityClass: new () => TEntity,
     thirdPartyOrigin: ThirdPartyOrigin,
+    relations?: any,
   ): Promise<void> {
     const pageSize = 1000;
     const memberBatchSize = 250;
@@ -148,7 +149,12 @@ export class SyncManagerService {
             )}`,
           );
 
-          await this.database.upsertMany(entityClass, mapped);
+          await this.database.upsertMany(
+            entityClass,
+            mapped,
+            undefined,
+            relations,
+          );
         }
 
         if (items.length < pageSize) break;
@@ -187,6 +193,7 @@ export class SyncManagerService {
         this.olive.pullTransactions(pageSize, pageNumber),
       Transaction,
       `olive`,
+      { member: true },
     );
     console.log(`Importing transactions from Loyalize.`);
     await this.importPaginated(
@@ -194,6 +201,7 @@ export class SyncManagerService {
         this.loyalize.pullTransactions(pageSize, pageNumber),
       Transaction,
       `loyalize`,
+      { member: true },
     );
   }
 

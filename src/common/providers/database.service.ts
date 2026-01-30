@@ -10,13 +10,17 @@ import {
   Repository,
 } from 'typeorm';
 
-const AUTO_TIMESTAMP_FIELDS = new Set([
+type AnyRecord = Record<string, any>;
+
+const AUTO_MANAGED_FIELDS = new Set([
+  `id`,
+  `externalUuid`,
   `created`,
-  `createdInternally`,
   `createdAt`,
+  `createdInternally`,
   `updated`,
-  `updatedInternally`,
   `updatedAt`,
+  `updatedInternally`,
 ]);
 
 @Injectable()
@@ -27,35 +31,116 @@ export class DatabaseService {
     repo: Repository<T>,
     record: Record<string, any>,
     idName = `externalUuid`,
+    relations?: any,
   ): Promise<T> {
     let existing: T | null = null;
 
     try {
       existing = await repo.findOne({
         where: { [idName]: record[idName] } as any,
+        relations,
       });
     } catch (e) {
       console.error(e);
     }
 
-    if (existing) {
-      const hasChanges = Object.entries(record).some(([key, incomingValue]) => {
-        // Ignore undefined inputs entirely
-        if (incomingValue === undefined) return false;
+    function normalizeNumeric(value: any): string | null {
+      if (value === null || value === undefined) return null;
+      return Number(value).toFixed(2);
+    }
 
-        // Ignore auto-managed timestamp fields
-        // UNLESS the incoming payload explicitly includes them
-        if (AUTO_TIMESTAMP_FIELDS.has(key)) return false;
+    function normalizeDate(value: any): number | null {
+      if (value === null || value === undefined) return null;
+
+      const date = value instanceof Date ? value : new Date(value);
+      if (isNaN(date.getTime())) return null;
+
+      // 🔑 truncate to millisecond precision
+      return Math.floor(date.getTime());
+    }
+
+    function isPrimitive(val: any): boolean {
+      return (
+        val === null ||
+        val === undefined ||
+        typeof val === `string` ||
+        typeof val === `number` ||
+        typeof val === `boolean`
+      );
+    }
+
+    function extractFk(value: any): any {
+      if (!value || typeof value !== `object`) return value;
+
+      // Common FK shapes in your codebase
+      if (`numericId` in value) return value.numericId;
+      if (`id` in value) return value.id;
+      if (`externalUuid` in value) return value.externalUuid;
+
+      return undefined;
+    }
+
+    function hasMeaningfulChanges<T extends AnyRecord>(
+      existing: T,
+      incoming: Partial<T>,
+    ): boolean {
+      return Object.entries(incoming).some(([key, incomingValue]) => {
+        // Ignore auto-managed fields
+        if (AUTO_MANAGED_FIELDS.has(key)) return false;
+
+        // Ignore missing fields entirely
+        if (incomingValue === undefined) return false;
 
         const existingValue = (existing as any)[key];
 
-        // Date-safe comparison
-        if (existingValue instanceof Date && incomingValue instanceof Date) {
-          return existingValue.getTime() !== incomingValue.getTime();
+        // Treat null and undefined as equal
+        if (
+          (existingValue === null || existingValue === undefined) &&
+          (incomingValue === null || incomingValue === undefined)
+        ) {
+          return false;
         }
 
-        return existingValue !== incomingValue;
+        // FK-aware object comparison
+        const existingFk = extractFk(existingValue);
+        const incomingFk = extractFk(incomingValue);
+
+        if (existingFk !== undefined || incomingFk !== undefined) {
+          return String(existingFk) !== String(incomingFk);
+        }
+
+        // Date comparison
+        if (
+          existingValue instanceof Date ||
+          incomingValue instanceof Date ||
+          typeof incomingValue === `string`
+        ) {
+          return normalizeDate(existingValue) !== normalizeDate(incomingValue);
+        }
+
+        // Numeric normalization (Postgres numeric)
+        if (
+          typeof existingValue === `string` &&
+          typeof incomingValue === `string` &&
+          !isNaN(Number(existingValue)) &&
+          !isNaN(Number(incomingValue))
+        ) {
+          return (
+            normalizeNumeric(existingValue) !== normalizeNumeric(incomingValue)
+          );
+        }
+
+        // Primitive comparison
+        if (isPrimitive(existingValue) && isPrimitive(incomingValue)) {
+          return existingValue !== incomingValue;
+        }
+
+        return false;
       });
+    }
+
+    if (existing) {
+      const hasChanges = hasMeaningfulChanges(existing, record as any);
 
       if (!hasChanges) {
         return existing;
@@ -83,11 +168,14 @@ export class DatabaseService {
     entityClass: new () => T,
     records: Record<string, any>[],
     findById?: string,
+    relations?: any,
   ): Promise<T[]> {
     const repo = this.dataSource.getRepository(entityClass);
     try {
       return Promise.all(
-        records.map((record) => this.upsertOne(repo, record, findById)),
+        records.map((record) =>
+          this.upsertOne(repo, record, findById, relations),
+        ),
       );
     } catch (e) {
       console.error(e);

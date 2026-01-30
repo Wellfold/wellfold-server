@@ -1,5 +1,5 @@
 import { ENV__OLIVE_API_KEY, ENV__OLIVE_CLIENT_ID } from '@/common/constants';
-import { Member } from '@/common/entities';
+import { Member, Reward } from '@/common/entities';
 import { DatabaseService } from '@/common/providers/database.service';
 import { UtilityService } from '@/common/providers/utility.service';
 import {
@@ -61,8 +61,26 @@ export class OliveService implements TransactionsPuller {
           member: memberList.find(
             (member) => item.memberId === member.externalUuid,
           ),
+          reward: item.reward ?? this.emptyReward(),
         };
       }),
+    };
+  }
+
+  protected emptyReward(): Reward {
+    return {
+      loyaltyProgramId: null,
+      offerId: null,
+      cumulativePurchaseCount: null,
+      cumulativePurchaseAmount: null,
+      rewardAmount: null,
+      status: null,
+      rejectionReason: null,
+      distributedToMemberAmount: null,
+      owedToMemberAmount: null,
+      confirmedDate: null,
+      confirmedByMerchantDate: null,
+      distributedToMemberDistributorDate: null,
     };
   }
 
