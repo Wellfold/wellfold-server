@@ -54,7 +54,7 @@ export class OutdatedMetrics {
           memberId: user.externalUuid,
           userId: user.wellfoldId,
           programName,
-          withTransactions: `true`,
+          withTransactions: `false`,
         });
         const baseUrl = this.config.get(ENV__OUTDATED_METRICS_URL);
         const url = `${baseUrl}?${params.toString()}`;
