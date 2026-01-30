@@ -1,7 +1,9 @@
 import { UtilityService } from '@/common/providers/utility.service';
 import { Presets, SingleBar } from 'cli-progress';
 
+import { UserMetricEnum } from '@/common/constants';
 import {
+  ManualAdjustment,
   Member,
   MemberMetric,
   Program,
@@ -17,6 +19,7 @@ import { PromotionProgressItem, UserMetricsItem } from '../sync-manager.types';
 const PROGRAM_PROMOTION_LIMIT = 1000000; // Unlikely to be > 1 million programs
 const DEFAULT_MONTHLY_PROMOTION_CAP = 10; // In dollars
 const PROGRAM_PROMOTION_PULL_INTERVAL = 1 * 60 * 60 * 1000; // 1 hour
+const ADJUSTMENT_PULL_INTERVAL = 5 * 60 * 1000; // 5 minutes
 
 @Injectable()
 export class MetricsService {
@@ -31,6 +34,8 @@ export class MetricsService {
   }
   protected programs: Program[];
   protected promotions: Promotion[];
+  protected adjustments: ManualAdjustment[];
+  protected adjustmentsLastPull: Date;
 
   protected async init() {
     console.log(`Pulling new programs and promotions.`);
@@ -52,17 +57,38 @@ export class MetricsService {
     }
   }
 
+  protected async getManualAdjustments() {
+    if (
+      this.adjustments &&
+      this.adjustmentsLastPull &&
+      Date.now() < this.adjustmentsLastPull.getTime() + ADJUSTMENT_PULL_INTERVAL
+    ) {
+      return this.adjustments;
+    }
+    const allAdjustments = await this.database.getMany(
+      ManualAdjustment,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      { user: true },
+    );
+    this.adjustmentsLastPull = new Date();
+    return allAdjustments;
+  }
+
   async constructMemberMetricEntities(
     member: Member,
     totalGmvValue: number | string,
     qualifiedGmvValue: number | string,
     totalRewardsValue: number | string,
   ) {
-    const metrics = [
-      { type: `total_gmv`, value: totalGmvValue },
-      { type: `qualified_gmv`, value: qualifiedGmvValue },
-      { type: `total_rewards`, value: totalRewardsValue },
-      { type: `rewards_balance`, value: 0 },
+    const adjustments = await this.getManualAdjustments();
+    const metrics: { type: UserMetricEnum; value: number | string }[] = [
+      { type: UserMetricEnum.TOTAL_GMV, value: totalGmvValue },
+      { type: UserMetricEnum.QUALIFIED_GMV, value: qualifiedGmvValue },
+      { type: UserMetricEnum.TOTAL_REWARDS, value: totalRewardsValue },
+      { type: UserMetricEnum.REWARDS_BALANCE, value: 0 },
     ];
     const redemptionsMetric = await this.getRedemptionMetricPerUser(member);
     const transformedMetrics = metrics
@@ -76,6 +102,19 @@ export class MetricsService {
         return {
           ...metric,
           value: Number.isNaN(metric.value) ? 0 : metric.value,
+        };
+      })
+      .map((metric) => {
+        const foundAdjustment = adjustments.find(
+          (item) =>
+            item.user.numericId === member.numericId &&
+            item.type === metric.type,
+        );
+        return {
+          ...metric,
+          value: foundAdjustment
+            ? Number(metric.value) + Number(foundAdjustment.adjustmentAmount)
+            : metric.value,
         };
       });
     transformedMetrics.push(redemptionsMetric);
@@ -380,7 +419,7 @@ export class MetricsService {
     );
     return {
       member: user,
-      type: `total_redemptions`,
+      type: UserMetricEnum.TOTAL_REDEMPTIONS,
       value: redemptionList.reduce(
         (sum, redemption) => sum + Number(redemption.amount),
         0,
@@ -448,13 +487,14 @@ export class MetricsService {
   }
 
   async saveRewardsBalanceMetric() {
-    const metricType = `rewards_balance`;
     const saveBufferSize = 100;
     let saveBuffer = [];
     const allUserIds = await this.database.getPropertyValues(
       Member,
       `numericId`,
     );
+
+    const allAdjustments = await this.getManualAdjustments();
     const bar = new SingleBar(
       {
         format: `Saving rewards balance metric for all users. |{bar}| {value}/{total} ({percentage}%)`,
@@ -474,13 +514,21 @@ export class MetricsService {
       if (!user) continue;
       const metricPayload = {
         member: user,
-        type: metricType,
-        uniqueMemberMetricId: this.getUniqueUserMetricId(user, metricType),
+        type: UserMetricEnum.REWARDS_BALANCE,
+        uniqueMemberMetricId: this.getUniqueUserMetricId(
+          user,
+          UserMetricEnum.REWARDS_BALANCE,
+        ),
         value: 0,
       };
-      const metricsList = await this.database.getMany(MemberMetric, 5, 0, {
-        member: { numericId: user.numericId },
-      });
+      const metricsList = await this.database.getMany(
+        MemberMetric,
+        Object.values(UserMetricEnum).length,
+        undefined,
+        {
+          member: { numericId: user.numericId },
+        },
+      );
       const totalRewards = metricsList.find(
         (metric) => metric.type === `total_rewards`,
       );
@@ -488,11 +536,22 @@ export class MetricsService {
         (metric) => metric.type === `total_redemptions`,
       );
       if (totalRewards && totalRedemptions) {
-        metricPayload.value = Math.max(
-          Number(totalRewards.value) - Number(totalRedemptions.value),
-          0,
+        // Find rewards balance adjustment (if any)
+        const rewardsBalanceAdjustment = allAdjustments.find(
+          (item) =>
+            item.user.numericId === userId &&
+            item.type === UserMetricEnum.REWARDS_BALANCE,
         );
+
+        const rewards = Number(totalRewards.value);
+        const redemptions = Number(totalRedemptions.value);
+        const baseBalance = Math.max(rewards - redemptions, 0);
+        const adjustment = rewardsBalanceAdjustment
+          ? Number(rewardsBalanceAdjustment.adjustmentAmount)
+          : 0;
+        metricPayload.value = Math.max(baseBalance + adjustment, 0);
       }
+
       saveBuffer.push(metricPayload);
       if (saveBuffer.length >= saveBufferSize) {
         await this.database.upsertMany(
@@ -530,26 +589,6 @@ export class MetricsService {
     return [...transactionsOlive, ...transactionsLoyalize].sort(
       (a, b) => a.created.getTime() - b.created.getTime(),
     );
-  }
-
-  getRewardsBalance(
-    promotionProgress: PromotionProgressItem[],
-    allTransactions: Transaction[],
-  ): number {
-    // Sum promotion progress term sum to get total Wellfold rewards.
-    const wfRewardBalance: number = promotionProgress.reduce(
-      (sum, obj) => sum + obj.rewardSum,
-      0,
-    );
-    // Sum Olive & Loyalize rewards, which are separate.
-    const oliveLoyalizeRewardBalance = allTransactions.reduce(
-      (oliveLoyalizeRewardsSum: number, transaction) => {
-        return oliveLoyalizeRewardsSum + Number(transaction.rewardAmount);
-      },
-      0,
-    );
-
-    return wfRewardBalance + oliveLoyalizeRewardBalance;
   }
 
   /**

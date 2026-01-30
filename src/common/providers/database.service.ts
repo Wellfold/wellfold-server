@@ -9,6 +9,16 @@ import {
   In,
   Repository,
 } from 'typeorm';
+
+const AUTO_TIMESTAMP_FIELDS = new Set([
+  `created`,
+  `createdInternally`,
+  `createdAt`,
+  `updated`,
+  `updatedInternally`,
+  `updatedAt`,
+]);
+
 @Injectable()
 export class DatabaseService {
   constructor(@InjectDataSource() private readonly dataSource: DataSource) {}
@@ -30,8 +40,12 @@ export class DatabaseService {
 
     if (existing) {
       const hasChanges = Object.entries(record).some(([key, incomingValue]) => {
-        // ignore undefined inputs entirely
+        // Ignore undefined inputs entirely
         if (incomingValue === undefined) return false;
+
+        // Ignore auto-managed timestamp fields
+        // UNLESS the incoming payload explicitly includes them
+        if (AUTO_TIMESTAMP_FIELDS.has(key)) return false;
 
         const existingValue = (existing as any)[key];
 
@@ -82,8 +96,8 @@ export class DatabaseService {
 
   async getMany<T>(
     entityClass: new () => T,
-    limit: number,
-    offset: number,
+    limit?: number,
+    offset?: number,
     where: Record<string, any> = {},
     order?: any,
     relations?: any,
@@ -92,8 +106,8 @@ export class DatabaseService {
 
     return repo.find({
       where,
-      take: limit,
-      skip: offset,
+      take: limit ?? undefined,
+      skip: offset ?? undefined,
       order: !order ? undefined : (order as any),
       relations,
     });

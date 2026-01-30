@@ -1,5 +1,6 @@
 export * from './auth.user.entity';
 export * from './card.entity';
+export * from './manual-adjustment.entity';
 export * from './member-metric.entity';
 export * from './member.entity';
 export * from './program.entity';

@@ -11,6 +11,7 @@ import {
 import {
   AuthUser,
   Card,
+  ManualAdjustment,
   Member,
   MemberMetric,
   Program,
@@ -49,6 +50,7 @@ import {
     TypeOrmModule.forFeature([
       AuthUser,
       Card,
+      ManualAdjustment,
       Member,
       MemberMetric,
       Redemption,

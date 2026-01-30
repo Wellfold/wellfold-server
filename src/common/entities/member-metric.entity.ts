@@ -8,7 +8,7 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
-import { UserMetricType } from '../types/common.types';
+import { UserMetricEnum } from '../constants';
 import { Member } from './member.entity';
 
 @Entity(`user_metrics`)
@@ -28,7 +28,7 @@ export class MemberMetric {
 
   @Index()
   @Column({ type: `text` })
-  type: UserMetricType;
+  type: UserMetricEnum;
 
   @Index()
   @Column({ type: `text`, name: `unique_member_metric_id` })
