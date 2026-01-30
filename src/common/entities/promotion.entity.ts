@@ -1,6 +1,5 @@
-import { Column, Entity, JoinColumn, ManyToOne, PrimaryColumn } from 'typeorm';
+import { Column, Entity, PrimaryColumn } from 'typeorm';
 import { PromotionCapType } from '../types/common.types';
-import { Program } from './program.entity';
 
 @Entity(`promotions`)
 export class Promotion {
@@ -13,11 +12,7 @@ export class Promotion {
   @Column({ type: `text`, nullable: true, name: `notes` })
   notes?: string;
 
-  @ManyToOne(() => Program)
-  @JoinColumn({
-    name: `program_id`,
-    referencedColumnName: `programId`,
-  })
+  @Column({ type: `text`, nullable: true, name: `program_id` })
   programId?: string;
 
   @Column({ type: `numeric`, nullable: true, name: `mcc_codes`, array: true })
@@ -50,7 +45,7 @@ export class Promotion {
   @Column({ type: `text`, nullable: true, name: `example_brands` })
   exampleBrands?: string;
 
-  @Column({ type: `bigint`, nullable: true, name: `max_value` })
+  @Column({ type: `numeric`, nullable: true, name: `max_value` })
   maxValue?: string;
 
   @Column({ type: `boolean`, nullable: true, name: `is_visible` })
