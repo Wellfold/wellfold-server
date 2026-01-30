@@ -46,4 +46,7 @@ export class ManualAdjustment {
     default: () => `now()`,
   })
   created: Date;
+
+  @Column({ type: `text`, nullable: true, name: `notes` })
+  notes?: string;
 }
