@@ -1,5 +1,6 @@
-import { Column, Entity, PrimaryColumn } from 'typeorm';
+import { Column, Entity, JoinColumn, ManyToOne, PrimaryColumn } from 'typeorm';
 import { PromotionCapType } from '../types/common.types';
+import { Program } from './program.entity';
 
 @Entity(`promotions`)
 export class Promotion {
@@ -12,7 +13,11 @@ export class Promotion {
   @Column({ type: `text`, nullable: true, name: `notes` })
   notes?: string;
 
-  @Column({ type: `text`, nullable: true, name: `program_id` })
+  @ManyToOne(() => Program)
+  @JoinColumn({
+    name: `program_id`,
+    referencedColumnName: `programId`,
+  })
   programId?: string;
 
   @Column({ type: `numeric`, nullable: true, name: `mcc_codes`, array: true })
