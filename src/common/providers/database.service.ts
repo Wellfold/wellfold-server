@@ -6,6 +6,7 @@ import {
   DataSource,
   DeepPartial,
   FindOptionsOrder,
+  FindOptionsWhere,
   In,
   Repository,
 } from 'typeorm';
@@ -138,6 +139,13 @@ export class DatabaseService {
 
   async count<T>(entityClass: new () => T): Promise<number> {
     return this.dataSource.getRepository(entityClass).count();
+  }
+
+  async countBy<T>(
+    entityClass: new () => T,
+    findOptions: FindOptionsWhere<T>,
+  ): Promise<number> {
+    return this.dataSource.getRepository(entityClass).countBy(findOptions);
   }
 
   async getPropertyValues<T, K extends keyof T>(
