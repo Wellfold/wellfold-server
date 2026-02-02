@@ -14,6 +14,7 @@ import {
 } from '@/common/entities';
 import { DatabaseService } from '@/common/providers/database.service';
 import { Injectable } from '@nestjs/common';
+import { In, IsNull } from 'typeorm';
 import { PromotionProgressItem, UserMetricsItem } from '../sync-manager.types';
 
 const PROGRAM_PROMOTION_LIMIT = 1000000; // Unlikely to be > 1 million programs
@@ -65,16 +66,21 @@ export class MetricsService {
     ) {
       return this.adjustments;
     }
-    const allAdjustments = await this.database.getMany(
-      ManualAdjustment,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      { user: true },
-    );
-    this.adjustmentsLastPull = new Date();
-    return allAdjustments;
+
+    try {
+      const allAdjustments = await this.database.getMany(
+        ManualAdjustment,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        { user: true },
+      );
+      this.adjustmentsLastPull = new Date();
+      return allAdjustments;
+    } catch (e) {
+      console.error(e);
+    }
   }
 
   async constructMemberMetricEntities(
@@ -125,12 +131,21 @@ export class MetricsService {
     return `${user.wellfoldId}__${type}`;
   }
 
-  async calculateAndSaveMetrics() {
+  async calculateAndSaveMetrics(usersToFilterBy?: Member[]) {
     const userMetrics = new Map<number, UserMetricsItem>();
     const batchSize = 50;
     let transactionResaveBuffer: Transaction[] = [];
     const saveBatchSize = 50;
-    const total = await this.database.count(Transaction);
+    const total = await this.database.countBy(
+      Transaction,
+      usersToFilterBy
+        ? {
+            member: {
+              numericId: In(usersToFilterBy.map((user) => user.numericId)),
+            },
+          }
+        : {},
+    );
 
     const bar = new SingleBar(
       {
@@ -184,7 +199,13 @@ export class MetricsService {
         Transaction,
         batchSize,
         offset,
-        {},
+        usersToFilterBy
+          ? {
+              member: {
+                numericId: In(usersToFilterBy.map((user) => user.numericId)),
+              },
+            }
+          : {},
         { created: `ASC` },
         { member: true },
       );
@@ -285,9 +306,12 @@ export class MetricsService {
     // Existing metrics
     const userMetricsList = Array.from(userMetrics.values());
 
-    const allUserIds = await this.database.getPropertyValues(
-      Member,
-      `numericId`,
+    const allUserIds = (
+      await this.database.getPropertyValues(Member, `numericId`)
+    ).filter((userId) =>
+      usersToFilterBy
+        ? usersToFilterBy.map((user) => user.numericId).includes(userId)
+        : true,
     );
 
     const metricsUserIdSet = new Set(
@@ -366,6 +390,7 @@ export class MetricsService {
           },
         );
         userPromotionStatusSaveBatch.push(...userPromotionStatusList);
+
         const entities = await this.constructMemberMetricEntities(
           member,
           totalGmv,
@@ -430,7 +455,9 @@ export class MetricsService {
 
   async resaveRedemptionsWithUserIdAndProgramId() {
     console.log(`Resaving redemptions with user ID and program ID.`);
-    const total = await this.database.count(Redemption);
+    const total = await this.database.countBy(Redemption, {
+      member: IsNull(),
+    });
     const bar = new SingleBar(
       {
         format: `Resaving redemptions with user ID and program ID |{bar}| {value}/{total} ({percentage}%)`,
@@ -486,12 +513,16 @@ export class MetricsService {
     bar.stop();
   }
 
-  async saveRewardsBalanceMetric() {
+  async saveRewardsBalanceMetric(usersToFilterBy?: Member[]) {
+    console.error({ usersToFilterBy });
     const saveBufferSize = 100;
     let saveBuffer = [];
-    const allUserIds = await this.database.getPropertyValues(
-      Member,
-      `numericId`,
+    const allUserIds = (
+      await this.database.getPropertyValues(Member, `numericId`)
+    ).filter((userId) =>
+      usersToFilterBy
+        ? usersToFilterBy.map((user) => user.numericId).includes(userId)
+        : true,
     );
 
     const allAdjustments = await this.getManualAdjustments();

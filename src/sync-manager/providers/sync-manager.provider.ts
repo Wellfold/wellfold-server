@@ -1,8 +1,9 @@
-import { Card, Member, Transaction } from '@/common/entities';
+import { Card, Member, MemberMetric, Transaction } from '@/common/entities';
 import { DatabaseService } from '@/common/providers/database.service';
 import { HasExternalUuid, ThirdPartyOrigin } from '@/common/types/common.types';
 import { LoyalizeService } from '@/loyalize/loyalize.service';
 import { OliveService } from '@/olive/olive.service';
+import { NotFoundException } from '@nestjs/common';
 import { Command, Console } from 'nestjs-console';
 import { DeepPartial } from 'typeorm';
 import { MetricsService } from './metrics.provider';
@@ -223,5 +224,58 @@ export class SyncManagerService {
   })
   async saveRewardsBalanceMetric() {
     await this.metrics.saveRewardsBalanceMetric();
+  }
+
+  @Command({
+    alias: `rmbu`,
+    command: `run-metrics-by-uuid <uuid>`,
+  })
+  async runMetricsByUuid(uuid: string) {
+    const userList = await this.database.getByProperty(
+      Member,
+      `wellfoldId`,
+      uuid,
+    );
+    if (!userList.length) {
+      throw new NotFoundException(`No user exists with that UUID.`);
+    }
+    const user = userList[0];
+    await this.metrics.resaveRedemptionsWithUserIdAndProgramId();
+    await this.metrics.calculateAndSaveMetrics([user]);
+    await this.metrics.saveRewardsBalanceMetric([user]);
+    const metrics = await this.database.getMany(
+      MemberMetric,
+      undefined,
+      undefined,
+      {
+        member: { numericId: user.numericId },
+      },
+    );
+    console.log(
+      `Metrics recalculated for user ${user.firstName} ${user.lastName} - ID: ${user.numericId} - UUID: ${user.wellfoldId}: `,
+    );
+    console.log({ user, metrics });
+    return { user, metrics };
+  }
+
+  async getMetricsByUuid(uuid: string) {
+    const userList = await this.database.getByProperty(
+      Member,
+      `wellfoldId`,
+      uuid,
+    );
+    if (!userList.length) {
+      throw new NotFoundException(`No user exists with that UUID.`);
+    }
+    const user = userList[0];
+    const metrics = await this.database.getMany(
+      MemberMetric,
+      undefined,
+      undefined,
+      {
+        member: { numericId: user.numericId },
+      },
+    );
+    return { user, metrics };
   }
 }
