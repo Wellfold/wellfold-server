@@ -378,17 +378,24 @@ export class MetricsService {
         const progressAcrossPromotions = Array.from(
           item.promotionProgress?.values() ?? [],
         );
-        const userPromotionStatusList = progressAcrossPromotions.map(
-          (progressItem) => {
+
+        // Collect & save
+        const userPromotionStatusList = progressAcrossPromotions
+          // Only add to the list if the term is current.
+          .filter((progressItem) => {
+            const term = getPromotionTerm(new Date(), progressItem.capType);
+            return progressItem.promotionTerm === term;
+          })
+          .map((progressItem) => {
             const { promotion } = progressItem;
             return {
               user: member,
               uniquePromotionUserId: `promotion__${promotion.id}__user__${member.numericId}`,
               promotion,
+              promoId: promotion.id,
               hasHitCap: Number(promotion.maxValue) <= progressItem.rewardSum,
             };
-          },
-        );
+          });
         userPromotionStatusSaveBatch.push(...userPromotionStatusList);
 
         const entities = await this.constructMemberMetricEntities(
@@ -514,7 +521,6 @@ export class MetricsService {
   }
 
   async saveRewardsBalanceMetric(usersToFilterBy?: Member[]) {
-    console.error({ usersToFilterBy });
     const saveBufferSize = 100;
     let saveBuffer = [];
     const allUserIds = (

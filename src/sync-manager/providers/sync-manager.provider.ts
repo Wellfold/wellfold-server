@@ -254,7 +254,6 @@ export class SyncManagerService {
     console.log(
       `Metrics recalculated for user ${user.firstName} ${user.lastName} - ID: ${user.numericId} - UUID: ${user.wellfoldId}: `,
     );
-    console.log({ user, metrics });
     return { user, metrics };
   }
 
