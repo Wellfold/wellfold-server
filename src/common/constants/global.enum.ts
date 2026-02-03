@@ -3,5 +3,5 @@ export enum UserMetricEnum {
   REWARDS_BALANCE = `rewards_balance`,
   TOTAL_REDEMPTIONS = `total_redemptions`,
   TOTAL_GMV = `total_gmv`,
-  QUALIFIED_GMV = `qualifed_gmv`,
+  QUALIFIED_GMV = `qualified_gmv`,
 }
