@@ -83,20 +83,27 @@ export class MetricsService {
     }
   }
 
-  async constructMemberMetricEntities(
+  async constructMemberMetricEntitySkeletons(
     member: Member,
     totalGmvValue: number | string,
     qualifiedGmvValue: number | string,
     totalRewardsValue: number | string,
   ) {
     const adjustments = await this.getManualAdjustments();
+    const redemptionsValue = await this.getRedemptionsValuePerUser(member);
     const metrics: { type: UserMetricEnum; value: number | string }[] = [
       { type: UserMetricEnum.TOTAL_GMV, value: totalGmvValue },
       { type: UserMetricEnum.QUALIFIED_GMV, value: qualifiedGmvValue },
       { type: UserMetricEnum.TOTAL_REWARDS, value: totalRewardsValue },
-      { type: UserMetricEnum.REWARDS_BALANCE, value: 0 },
+      {
+        type: UserMetricEnum.TOTAL_REDEMPTIONS,
+        value: redemptionsValue,
+      },
+      {
+        type: UserMetricEnum.REWARDS_BALANCE,
+        value: Number(totalRewardsValue) - redemptionsValue,
+      },
     ];
-    const redemptionsMetric = await this.getRedemptionMetricPerUser(member);
     const transformedMetrics = metrics
       .map(({ type, value }) => ({
         member,
@@ -123,7 +130,6 @@ export class MetricsService {
             : metric.value,
         };
       });
-    transformedMetrics.push(redemptionsMetric);
     return transformedMetrics;
   }
 
@@ -352,8 +358,8 @@ export class MetricsService {
     metricsBar.start(allWork.length, 0);
 
     const BATCH_SIZE = 100;
-    let saveBatch = [];
     let userPromotionStatusSaveBatch = [];
+    const memberMetricById = new Map<string, any>();
     for (let i = 0; i < allWork.length; i += BATCH_SIZE) {
       const chunk = allWork.slice(i, i + BATCH_SIZE);
 
@@ -398,22 +404,24 @@ export class MetricsService {
           });
         userPromotionStatusSaveBatch.push(...userPromotionStatusList);
 
-        const entities = await this.constructMemberMetricEntities(
+        const entities = await this.constructMemberMetricEntitySkeletons(
           member,
           totalGmv,
           qualifiedGmv,
           cumulativeRewards + externalRewards,
         );
+        for (const entity of entities) {
+          memberMetricById.set(entity.uniqueMemberMetricId, entity);
+        }
 
-        saveBatch.push(...entities);
         metricsBar.increment();
       }
 
       // Flush saves in controlled chunks
-      if (saveBatch.length >= BATCH_SIZE) {
+      if (memberMetricById.size >= BATCH_SIZE) {
         await this.database.upsertMany(
           MemberMetric,
-          saveBatch,
+          Array.from(memberMetricById.values()),
           `uniqueMemberMetricId`,
         );
         await this.database.upsertMany(
@@ -421,16 +429,16 @@ export class MetricsService {
           userPromotionStatusSaveBatch,
           `uniquePromotionUserId`,
         );
-        saveBatch = [];
+        memberMetricById.clear();
         userPromotionStatusSaveBatch = [];
       }
     }
 
     // Final flush
-    if (saveBatch.length) {
+    if (memberMetricById.size) {
       await this.database.upsertMany(
         MemberMetric,
-        saveBatch,
+        Array.from(memberMetricById.values()),
         `uniqueMemberMetricId`,
       );
       await this.database.upsertMany(
@@ -443,21 +451,16 @@ export class MetricsService {
     metricsBar.stop();
   }
 
-  async getRedemptionMetricPerUser(user: Member) {
+  async getRedemptionsValuePerUser(user: Member) {
     const redemptionList = await this.database.getByProperty(
       Redemption,
       `memberId`,
       user.externalUuid,
     );
-    return {
-      member: user,
-      type: UserMetricEnum.TOTAL_REDEMPTIONS,
-      value: redemptionList.reduce(
-        (sum, redemption) => sum + Number(redemption.amount),
-        0,
-      ),
-      uniqueMemberMetricId: `${user.wellfoldId}__total_redemptions`,
-    };
+    return redemptionList.reduce(
+      (sum, redemption) => sum + Number(redemption.amount),
+      0,
+    );
   }
 
   async resaveRedemptionsWithUserIdAndProgramId() {
@@ -516,96 +519,6 @@ export class MetricsService {
       }
       offset += batchSize;
       hasMore = redemptionBatch.length === batchSize;
-    }
-    bar.stop();
-  }
-
-  async saveRewardsBalanceMetric(usersToFilterBy?: Member[]) {
-    const saveBufferSize = 100;
-    let saveBuffer = [];
-    const allUserIds = (
-      await this.database.getPropertyValues(Member, `numericId`)
-    ).filter((userId) =>
-      usersToFilterBy
-        ? usersToFilterBy.map((user) => user.numericId).includes(userId)
-        : true,
-    );
-
-    const allAdjustments = await this.getManualAdjustments();
-    const bar = new SingleBar(
-      {
-        format: `Saving rewards balance metric for all users. |{bar}| {value}/{total} ({percentage}%)`,
-      },
-      Presets.shades_classic,
-    );
-    bar.start(allUserIds.length, 0);
-
-    for (const userId of allUserIds) {
-      bar.increment();
-      const userList = await this.database.getByProperty(
-        Member,
-        `numericId`,
-        userId,
-      );
-      const user = userList[0];
-      if (!user) continue;
-      const metricPayload = {
-        member: user,
-        type: UserMetricEnum.REWARDS_BALANCE,
-        uniqueMemberMetricId: this.getUniqueUserMetricId(
-          user,
-          UserMetricEnum.REWARDS_BALANCE,
-        ),
-        value: 0,
-      };
-      const metricsList = await this.database.getMany(
-        MemberMetric,
-        Object.values(UserMetricEnum).length,
-        undefined,
-        {
-          member: { numericId: user.numericId },
-        },
-      );
-      const totalRewards = metricsList.find(
-        (metric) => metric.type === `total_rewards`,
-      );
-      const totalRedemptions = metricsList.find(
-        (metric) => metric.type === `total_redemptions`,
-      );
-      if (totalRewards && totalRedemptions) {
-        // Find rewards balance adjustment (if any)
-        const rewardsBalanceAdjustment = allAdjustments.find(
-          (item) =>
-            item.user.numericId === userId &&
-            item.type === UserMetricEnum.REWARDS_BALANCE,
-        );
-
-        const rewards = Number(totalRewards.value);
-        const redemptions = Number(totalRedemptions.value);
-        const baseBalance = Math.max(rewards - redemptions, 0);
-        const adjustment = rewardsBalanceAdjustment
-          ? Number(rewardsBalanceAdjustment.adjustmentAmount)
-          : 0;
-        metricPayload.value = Math.max(baseBalance + adjustment, 0);
-      }
-
-      saveBuffer.push(metricPayload);
-      if (saveBuffer.length >= saveBufferSize) {
-        await this.database.upsertMany(
-          MemberMetric,
-          saveBuffer,
-          `uniqueMemberMetricId`,
-        );
-        saveBuffer = [];
-      }
-    }
-    if (saveBuffer.length) {
-      await this.database.upsertMany(
-        MemberMetric,
-        saveBuffer,
-        `uniqueMemberMetricId`,
-      );
-      saveBuffer = [];
     }
     bar.stop();
   }

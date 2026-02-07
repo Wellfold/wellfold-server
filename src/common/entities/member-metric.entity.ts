@@ -31,7 +31,7 @@ export class MemberMetric {
   type: UserMetricEnum;
 
   @Index()
-  @Column({ type: `text`, name: `unique_member_metric_id` })
+  @Column({ type: `text`, name: `unique_member_metric_id`, unique: true })
   uniqueMemberMetricId: string;
 
   @Column({
