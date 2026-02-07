@@ -26,10 +26,9 @@ export class SyncManagerService {
       await this.importMembers();
       await this.importCards();
       await this.importTransactions();
+      await this.handleRedemptions();
       await this.runMetrics();
       await this.setCardLinkDatesOnMembers();
-      await this.handleRedemptions();
-      await this.saveRewardsBalanceMetric();
       console.log(`All done!`);
     } catch (e) {
       console.error(e);
@@ -219,14 +218,6 @@ export class SyncManagerService {
   }
 
   @Command({
-    alias: `rb`,
-    command: `rewards-balances`,
-  })
-  async saveRewardsBalanceMetric() {
-    await this.metrics.saveRewardsBalanceMetric();
-  }
-
-  @Command({
     alias: `rmbu`,
     command: `run-metrics-by-uuid <uuid>`,
   })
@@ -242,7 +233,6 @@ export class SyncManagerService {
     const user = userList[0];
     await this.metrics.resaveRedemptionsWithUserIdAndProgramId();
     await this.metrics.calculateAndSaveMetrics([user]);
-    await this.metrics.saveRewardsBalanceMetric([user]);
     const metrics = await this.database.getMany(
       MemberMetric,
       undefined,
