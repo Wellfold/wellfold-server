@@ -174,39 +174,6 @@ export class Member implements HasExternalUuid, HasInternalCreatedUpdated {
   @Column({ type: `int`, default: 0 })
   activeCardCount: number;
 
-  @Column({
-    type: `numeric`,
-    precision: 10,
-    scale: 2,
-    nullable: true,
-    name: `total_gmv`,
-  })
-  totalGmv?: string;
-
-  @Column({
-    type: `numeric`,
-    precision: 10,
-    scale: 2,
-    nullable: true,
-    name: `qualified_gmv`,
-  })
-  qualifiedGmv?: string;
-
-  @Column({
-    type: `numeric`,
-    precision: 10,
-    scale: 2,
-    nullable: true,
-    name: `rewards_balance`,
-  })
-  rewardsBalance?: string;
-
-  @Column({ type: `timestamptz`, nullable: true, name: `metrics_last_updated` })
-  metricsLastUpdated: Date;
-
-  @Column({ type: `text`, nullable: true, name: `metrics_calculation_status` })
-  metricsCalculationStatus?: string;
-
   @CreateDateColumn({ type: `timestamptz`, name: `created_internally` })
   createdInternally: Date;
 
