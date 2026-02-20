@@ -9,6 +9,7 @@ import {
   ENV__SYNC_DB_SCHEMA,
 } from './constants/global.constants';
 import {
+  AdjustmentCategory,
   AuthUser,
   Card,
   ManualAdjustment,
@@ -48,6 +49,7 @@ import {
       },
     }),
     TypeOrmModule.forFeature([
+      AdjustmentCategory,
       AuthUser,
       Card,
       ManualAdjustment,

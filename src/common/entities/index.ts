@@ -1,3 +1,4 @@
+export * from './adjustment-category.entity';
 export * from './auth.user.entity';
 export * from './card.entity';
 export * from './manual-adjustment.entity';
