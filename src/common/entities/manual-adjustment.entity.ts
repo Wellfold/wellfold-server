@@ -53,7 +53,7 @@ export class ManualAdjustment {
 
   @ManyToOne(() => AdjustmentCategory, { nullable: true })
   @JoinColumn({
-    name: `adjustment_category`,
+    name: `adjustment_category_id`,
     referencedColumnName: `id`,
   })
   adjustmentCategory?: AdjustmentCategory;
