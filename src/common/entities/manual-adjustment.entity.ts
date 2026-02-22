@@ -8,6 +8,7 @@ import {
   PrimaryGeneratedColumn,
 } from 'typeorm';
 import { UserMetricEnum } from '../constants';
+import { AdjustmentCategory } from './adjustment-category.entity';
 import { Member } from './member.entity';
 
 @Entity(`manual_adjustments`)
@@ -49,4 +50,11 @@ export class ManualAdjustment {
 
   @Column({ type: `text`, nullable: true, name: `notes` })
   notes?: string;
+
+  @ManyToOne(() => AdjustmentCategory, { nullable: true })
+  @JoinColumn({
+    name: `adjustment_category_id`,
+    referencedColumnName: `id`,
+  })
+  adjustmentCategory?: AdjustmentCategory;
 }
